@@ -1,62 +1,24 @@
-// -----------------------------
-// 📌 Veilfi Backend - MAINNET
-// Node 22 + Express + ES Modules
-// -----------------------------
-
-import dotenv from "dotenv";
-dotenv.config();
-
-import express from "express";
-import cors from "cors";
-
-// Rotas
-import withdrawRoutes from "./routes/withdraw.js";
-import depositRoutes from "./routes/deposit.js";
-
-// Deposit Tracker
-import { checkDeposits } from "./services/depositTracker.js";
+require('dotenv').config();
+const express = require('express');
+const rateLimit = require('express-rate-limit');
+const { pool } = require('./db'); // ensure DB exists
+const userRoutes = require('./routes/user');
+const activityRoutes = require('./routes/activity');
 
 const app = express();
-
-// -----------------------------
-// 💠 Middlewares
-// -----------------------------
-app.use(cors());
 app.use(express.json());
+app.use(rateLimit({ windowMs: 60*1000, max: 200 }));
 
-// -----------------------------
-// 🔵 Routes
-// -----------------------------
-app.use("/withdraw", withdrawRoutes);
-app.use("/deposit", depositRoutes);
+app.get('/health', (req,res) => res.json({ ok: true }));
 
-// -----------------------------
-// 🔄 Deposit Tracking Loop
-// -----------------------------
-setInterval(async () => {
-  try {
-    const newDeposits = await checkDeposits();
-    if (newDeposits.length > 0) {
-      console.log("💰 New deposits detected:", newDeposits);
-    }
-  } catch (error) {
-    console.error("❌ depositTracker error:", error);
-  }
-}, 15000); // 15 seconds
+app.use('/user', userRoutes);
+app.use('/activity', activityRoutes);
 
-// -----------------------------
-// 🧪 Health Check
-// -----------------------------
-app.get("/", (_, res) => {
-  res.send("API Online - Veilfi Backend MAINNET 🚀");
-});
-
-// -----------------------------
-// 🚀 Start Server
-// -----------------------------
 const PORT = process.env.PORT || 3001;
 
-app.listen(PORT, () => {
-  console.log(`Backend running on port ${PORT}`);
-  console.log("RPC:", process.env.RPC_URL);
-});
+// optional: run migrations at startup if env RUN_MIGRATIONS=true
+if (process.env.RUN_MIGRATIONS === 'true') {
+  console.log('RUN_MIGRATIONS=true -> run migrations via npm run migrate before start');
+}
+
+app.listen(PORT, ()=> console.log('Server listening on', PORT));
