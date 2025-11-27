@@ -1,59 +1,16 @@
-const { PublicKey } = require("@solana/web3.js");
-const { TOKEN_PROGRAM_ID } = require("@solana/spl-token");
-const { createConnection } = require("./solana");
-
-async function getUserBalances(pubkeyStr, supportedMints) {
+router.post("/balance", async (req, res) => {
   try {
-    const connection = createConnection();
-    const pubkey = new PublicKey(pubkeyStr);
+    const { userPubkey } = req.body;
+    const sol = await getSolBalance(userPubkey);
+    const tokens = await getAllTokens(userPubkey);
 
-    //------------------------------------
-    // 1. SOL BALANCE
-    //------------------------------------
-    const solLamports = await connection.getBalance(pubkey);
-    const sol = solLamports / 1e9;
-
-    //------------------------------------
-    // 2. SPL TOKEN ACCOUNTS
-    //------------------------------------
-    const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
-      pubkey,
-      { programId: TOKEN_PROGRAM_ID }
-    );
-
-    const spl = {};
-
-    for (const item of tokenAccounts.value) {
-      const info = item.account.data.parsed.info;
-      const mint = info.mint;
-
-      // ignorar tokens não suportados
-      if (!supportedMints.includes(mint)) continue;
-
-      const amount = info.tokenAmount.uiAmount || 0;
-      spl[mint] = amount;
-    }
-
-    //------------------------------------
-    // 3. Tokens suportados SEM ATA → 0
-    //------------------------------------
-    supportedMints.forEach((mint) => {
-      if (spl[mint] === undefined) {
-        spl[mint] = 0;
-      }
+    return res.json({
+      wallet: userPubkey,
+      solBalance: sol,
+      tokens: tokens,
     });
-
-    return {
-      sol,
-      spl,
-    };
-
   } catch (err) {
-    console.error("Error loading balances:", err);
-    throw new Error("Unable to fetch balances");
+    console.error("❌ balance error:", err);
+    return res.status(500).json({ error: "Server error", detail: err.message });
   }
-}
-
-module.exports = {
-  getUserBalances,
-};
+});

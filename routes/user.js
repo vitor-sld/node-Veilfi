@@ -1,67 +1,25 @@
 const express = require("express");
 const router = express.Router();
+const swapService = require("../services/swap");
 
-const { Connection, PublicKey } = require("@solana/web3.js");
-const {
-  getAccount,
-  TOKEN_PROGRAM_ID,
-  TOKEN_2022_PROGRAM_ID
-} = require("@solana/spl-token");
-
-const RPC = process.env.RPC_URL;
-const SUPPORTED_MINTS = (process.env.SUPPORTED_MINTS || "")
-  .split(",")
-  .map(s => s.trim())
-  .filter(Boolean);
-
-router.post("/balance", async (req, res) => {
-  const { pubkey } = req.body;
-  if (!pubkey) return res.status(400).json({ error: "Missing pubkey" });
-
+router.post("/execute", async (req, res) => {
   try {
-    const connection = new Connection(RPC, "confirmed");
-    const owner = new PublicKey(pubkey);
+    const { userPubkey, fromMint, toMint, amount } = req.body;
 
-    // -------- SOLANA --------
-    const lamports = await connection.getBalance(owner);
-    const sol = lamports / 1e9;
+    if (!userPubkey || !fromMint || !toMint || !amount)
+      return res.status(400).json({ error: "Missing fields" });
 
-    // -------- SPL TOKENS (ambos programas) --------
+    const tx = await swapService.executeSwap({
+      userPubkey,
+      fromMint,
+      toMint,
+      amount,
+    });
 
-    async function fetchTokens(programId) {
-      const list = await connection.getTokenAccountsByOwner(owner, {
-        programId
-      });
-
-      const tokens = [];
-      for (const { pubkey: ata } of list.value) {
-        try {
-          const acc = await getAccount(connection, ata, "confirmed");
-          const mint = acc.mint.toBase58();
-
-          if (SUPPORTED_MINTS.includes(mint)) {
-            tokens.push({
-              mint,
-              decimals: acc.decimals,
-              amount: acc.amount,
-              uiAmount: Number(acc.amount) / 10 ** acc.decimals
-            });
-          }
-        } catch {}
-      }
-      return tokens;
-    }
-
-    const tokensClassic = await fetchTokens(TOKEN_PROGRAM_ID);      // USDT
-    const tokens2022   = await fetchTokens(TOKEN_2022_PROGRAM_ID);   // TEST, pump.fun
-
-    const tokens = [...tokensClassic, ...tokens2022];
-
-    return res.json({ pubkey, sol, tokens });
-
-  } catch (e) {
-    console.error("BALANCE ERROR:", e);
-    res.status(500).json({ error: e.message });
+    return res.json({ ok: true, tx });
+  } catch (err) {
+    console.error("swap error:", err);
+    return res.status(500).json({ error: "Swap failed" });
   }
 });
 

@@ -11,15 +11,17 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- activities: histórico de operações por usuário
-CREATE TABLE IF NOT EXISTS activities (
-  id BIGSERIAL PRIMARY KEY,
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  type TEXT NOT NULL, -- deposit | withdraw | swap
-  token TEXT,
-  amount BIGINT, -- lamports or base units for SPL
-  signature TEXT,
-  metadata JSONB,
-  created_at TIMESTAMPTZ DEFAULT now()
+CREATE TABLE activities (
+  id SERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  txid TEXT,
+  type TEXT,
+  mint_from TEXT,
+  mint_to TEXT,
+  amount NUMERIC,
+  status TEXT,
+  meta JSONB,
+  created_at TIMESTAMP DEFAULT now()
 );
 
 -- tokens (opcional): catálogo de tokens suportados
