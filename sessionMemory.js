@@ -1,15 +1,11 @@
-// server/sessionMemory.js
-let currentUser = null;
+let user = null;
 
-function setUser(user) {
-  currentUser = user;
+function setUser(u) {
+  user = u;
 }
 
 function getUser() {
-  return currentUser;
+  return user;
 }
 
-module.exports = {
-  setUser,
-  getUser,
-};
+module.exports = { setUser, getUser };

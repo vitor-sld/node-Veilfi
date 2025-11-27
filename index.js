@@ -1,7 +1,5 @@
 const express = require("express");
 const cors = require("cors");
-const swapRouter = require("./routes/swap");
-
 const app = express();
 
 app.use(cors({
@@ -10,16 +8,13 @@ app.use(cors({
 }));
 
 app.use(express.json());
-app.use("/swap", swapRouter);
 
-// rotas
-const authRouter = require("./routes/auth");
-const sessionRouter = require("./routes/session");
-const userRouter = require("./routes/user");
+// Rotas existentes
+app.use("/auth", require("./routes/auth"));
+app.use("/session", require("./routes/session"));
+app.use("/user", require("./routes/user"));
 
-// usar rotas (NÃO integrar mais manualmente)
-app.use("/auth", authRouter);
-app.use("/session", sessionRouter);
-app.use("/user", userRouter);
+// ⬅️ ESTA É A ROTA QUE VOCÊ ACABOU DE CRIAR
+app.use("/wallet", require("./routes/wallet"));
 
 app.listen(3001, () => console.log("🔥 Backend rodando na porta 3001"));

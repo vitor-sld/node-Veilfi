@@ -1,15 +1,13 @@
-// server/routes/session.js
 const express = require("express");
 const router = express.Router();
-const session = require("../sessionMemory");
+const { getUser } = require("../sessionMemory");
 
-// GET /session/me
 router.get("/me", (req, res) => {
-  return res.json({ user: session.getUser() });
-});
+  const user = getUser();
+  console.log("ℹ️ Session pedida. Existe?", !!user);
+  if (!user) return res.status(404).json({ error: "No session" });
 
-// Também expõe a função setUser na instância do router
-// para permitir integração no index.js: const sessionRouter = require('./routes/session');
-router.setUser = session.setUser;
+  return res.json({ user });
+});
 
 module.exports = router;

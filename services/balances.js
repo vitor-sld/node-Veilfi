@@ -1,16 +1,12 @@
 router.post("/balance", async (req, res) => {
   try {
     const { userPubkey } = req.body;
-    const sol = await getSolBalance(userPubkey);
-    const tokens = await getAllTokens(userPubkey);
+    if (!userPubkey) return res.status(400).json({ error: "Missing pubkey" });
 
-    return res.json({
-      wallet: userPubkey,
-      solBalance: sol,
-      tokens: tokens,
-    });
+    const info = await getSolanaWalletInfo(userPubkey);
+    return res.json(info);
   } catch (err) {
-    console.error("❌ balance error:", err);
-    return res.status(500).json({ error: "Server error", detail: err.message });
+    console.error("/user/balance error:", err);
+    return res.status(500).json({ error: "Server error" });
   }
 });

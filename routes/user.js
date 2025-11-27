@@ -1,25 +1,28 @@
 const express = require("express");
 const router = express.Router();
-const swapService = require("../services/swap");
 
-router.post("/execute", async (req, res) => {
+const { getSolanaWalletInfo } = require("../services/solana");
+
+router.post("/balance", async (req, res) => {
   try {
-    const { userPubkey, fromMint, toMint, amount } = req.body;
+    const { userPubkey } = req.body;
 
-    if (!userPubkey || !fromMint || !toMint || !amount)
-      return res.status(400).json({ error: "Missing fields" });
+    if (!userPubkey) {
+      return res.status(400).json({ error: "Missing pubkey" });
+    }
 
-    const tx = await swapService.executeSwap({
-      userPubkey,
-      fromMint,
-      toMint,
-      amount,
+    console.log("📡 Buscando saldo de:", userPubkey);
+
+    const info = await getSolanaWalletInfo(userPubkey);
+
+    return res.json({
+      solBalance: info.solBalance ?? 0,
+      tokens: info.tokens ?? []
     });
 
-    return res.json({ ok: true, tx });
   } catch (err) {
-    console.error("swap error:", err);
-    return res.status(500).json({ error: "Swap failed" });
+    console.error("❌ /user/balance error:", err);
+    return res.status(500).json({ error: "Server error" });
   }
 });
 
