@@ -1,20 +1,23 @@
-// routes/wallet.js
+// server/routes/user.js
 const express = require("express");
 const router = express.Router();
-const { getSolanaWalletInfo } = require("../services/solana");
+const { PublicKey, Connection } = require("@solana/web3.js");
 
-// POST /wallet/balance
-router.post("/user/balance", async (req, res) => {
+const RPC_URL = "https://frequent-soft-daylight.solana-mainnet.quiknode.pro/db097341fa55b3a5bf3e5d96776910263c3a492a/";
+const connection = new Connection(RPC_URL);
+
+router.post("/balance", async (req, res) => {
   try {
-    const { userPubkey } = req.body;
-    if (!userPubkey) return res.status(400).json({ error: "Missing userPubkey" });
+    const pub = req.body.userPubkey;
 
-    const info = await getSolanaWalletInfo(userPubkey);
-    return res.json(info);
+    if (!pub) return res.status(400).json({ error: "userPubkey required" });
 
-  } catch (e) {
-    console.error("wallet/balance error:", e);
-    return res.status(500).json({ error: "Server error" });
+    const amount = await connection.getBalance(new PublicKey(pub));
+
+    return res.json({ balance: amount / 1e9 });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "BALANCE_ERROR" });
   }
 });
 

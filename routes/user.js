@@ -1,29 +1,30 @@
+// server/routes/user.js
 const express = require("express");
 const router = express.Router();
-const solanaWeb3 = require("@solana/web3.js");
+const { PublicKey, Connection } = require("@solana/web3.js");
 
-router.post("/user/balance", async (req, res) => {
+const RPC_URL = "https://frequent-soft-daylight.solana-mainnet.quiknode.pro/db097341fa55b3a5bf3e5d96776910263c3a492a/";
+const connection = new Connection(RPC_URL);
+
+// GET BALANCE
+router.post("/balance", async (req, res) => {
   try {
-    const { userPubkey } = req.body;
-console.log("RECEBIDO PELO BACKEND:", req.body);
+    const pub = req.body.userPubkey;
 
-    if (!userPubkey) {
-      return res.status(400).json({ error: "Missing userPubkey" });
+    if (!pub) {
+      return res.status(400).json({ error: "userPubkey required" });
     }
 
-    const connection = new solanaWeb3.Connection(
-      solanaWeb3.clusterApiUrl("mainnet-beta"),
-      "confirmed"
-    );
+    const lamports = await connection.getBalance(new PublicKey(pub));
 
-    const publicKey = new solanaWeb3.PublicKey(userPubkey);
-    const lamports = await connection.getBalance(publicKey);
-    const sol = lamports / solanaWeb3.LAMPORTS_PER_SOL;
+    return res.json({
+      balance: lamports / 1e9,
+    });
 
-    return res.json({ balance: sol });
   } catch (err) {
-    console.error("Erro balance:", err);
-    return res.status(500).json({ error: "Balance error" });
+    console.error("BALANCE ERROR:", err);
+    return res.status(500).json({ error: "BALANCE_ERROR" });
   }
 });
+
 module.exports = router;

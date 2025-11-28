@@ -2,32 +2,32 @@
 const sessions = new Map();
 
 /**
- * Cria sessão (em memória)
+ * Cria sessão corretamente
+ * @param {Object} res - Express response (primeiro!)
  * @param {string} walletPubkey
- * @param {number[]|undefined} secretKey
- * @param {Object} res - response do express para setar cookie
+ * @param {number[]} secretKey
  * @param {boolean} isProduction
- * @returns {string} sid
  */
-function createSession(walletPubkey, secretKey, res, isProduction = false) {
+function createSession(res, walletPubkey, secretKey, isProduction = false) {
   const sid = Math.random().toString(36).slice(2);
+
   sessions.set(sid, { walletPubkey, secretKey });
-  // cookie options — em produção precisamos sameSite:'none' e secure:true
-  const cookieOpts = {
+
+  res.cookie("sid", sid, {
     httpOnly: true,
     sameSite: isProduction ? "none" : "lax",
-    secure: !!isProduction,
-    // domain/path etc podem ser ajustados se necessário
-  };
-  res.cookie("sid", sid, cookieOpts);
+    secure: isProduction,
+    path: "/",  // obrigatório no Render
+  });
+
   return sid;
 }
 
-/** Recupera sessão do req (retorna objeto da sessão ou null) */
+/** Recupera sessão corretamente */
 function getSession(req) {
   const sid = req.cookies?.sid;
   if (!sid) return null;
-  return sessions.has(sid) ? sessions.get(sid) : null;
+  return sessions.get(sid) || null;
 }
 
 module.exports = { createSession, getSession };
