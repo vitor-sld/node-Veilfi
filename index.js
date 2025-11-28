@@ -11,7 +11,7 @@ app.use(cors({ origin: "http://localhost:5173", credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 
-const connection = new Connection("https://api.mainnet-beta.solana.com");
+const connection = new Connection("https://frequent-soft-daylight.solana-mainnet.quiknode.pro/db097341fa55b3a5bf3e5d96776910263c3a492a/");
 const sessions = new Map(); // chave: sessionId, valor: { walletPubkey }
 
 function getSession(req) {

@@ -2,9 +2,11 @@ const express = require("express");
 const router = express.Router();
 const solanaWeb3 = require("@solana/web3.js");
 
-router.post("/balance", async (req, res) => {
+router.post("/user/balance", async (req, res) => {
   try {
     const { userPubkey } = req.body;
+console.log("RECEBIDO PELO BACKEND:", req.body);
+
     if (!userPubkey) {
       return res.status(400).json({ error: "Missing userPubkey" });
     }
@@ -24,5 +26,4 @@ router.post("/balance", async (req, res) => {
     return res.status(500).json({ error: "Balance error" });
   }
 });
-
 module.exports = router;

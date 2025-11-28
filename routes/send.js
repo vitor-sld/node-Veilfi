@@ -14,7 +14,7 @@ const {
 } = require("@solana/web3.js");
 const walletController = require("../controllers/walletController");
 // RPC atual — você pode ajustar depois
-const RPC_URL = "https://api.mainnet-beta.solana.com";
+const RPC_URL = "https://frequent-soft-daylight.solana-mainnet.quiknode.pro/db097341fa55b3a5bf3e5d96776910263c3a492a/";
 
 router.post("/", async (req, res) => {
   console.log("=== PART 3 /tx/send REAL SOLANA TRANSACTION ===");

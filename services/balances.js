@@ -4,7 +4,7 @@ const router = express.Router();
 const { getSolanaWalletInfo } = require("../services/solana");
 
 // POST /wallet/balance
-router.post("/balance", async (req, res) => {
+router.post("/user/balance", async (req, res) => {
   try {
     const { userPubkey } = req.body;
     if (!userPubkey) return res.status(400).json({ error: "Missing userPubkey" });

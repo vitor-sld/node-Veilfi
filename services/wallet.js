@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { getSolanaWalletInfo } = require("../services/solana");
 
-router.get("/balance", async (req, res) => {
+router.get("/user/balance", async (req, res) => {
   try {
     const address = req.query.address;
     if (!address) return res.status(400).json({ error: "Missing address" });

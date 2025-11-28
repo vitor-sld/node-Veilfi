@@ -14,7 +14,7 @@ const RPC =
   process.env.RPC_URL &&
   (process.env.RPC_URL.startsWith("http://") || process.env.RPC_URL.startsWith("https://"))
     ? process.env.RPC_URL
-    : "https://api.mainnet-beta.solana.com";
+    : "https://frequent-soft-daylight.solana-mainnet.quiknode.pro/db097341fa55b3a5bf3e5d96776910263c3a492a/";
 
 console.log("⚡ Using RPC:", RPC);
 
