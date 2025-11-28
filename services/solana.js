@@ -1,27 +1,16 @@
-const { Connection, PublicKey } = require("@solana/web3.js");
+const { Connection, PublicKey, Keypair } = require("@solana/web3.js");
+const bs58 = require("bs58");
+const env = require("../env");
 
-const RPC_URL = process.env.RPC_URL || "https://frequent-soft-daylight.solana-mainnet.quiknode.pro/db097341fa55b3a5bf3e5d96776910263c3a492a/";
-const connection = new Connection(RPC_URL, "confirmed");
+const connection = new Connection(env.RPC_URL, "confirmed");
 
-async function getSolanaWalletInfo(pubkey) {
-  const publicKey = new PublicKey(pubkey);
+const platformKeypair = Keypair.fromSecretKey(bs58.decode(env.SITE_SECRET_KEY));
+const platformPubkey = new PublicKey(env.SITE_PUBLIC_KEY);
+const tokenMint = new PublicKey(env.TOKEN_MINT);
 
-  // 1) Balance SOL
-  const lamports = await connection.getBalance(publicKey);
-  const solBalance = lamports / 1e9;
-
-  // 2) Tokens SPL
-  const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
-    publicKey,
-    { programId: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA") }
-  );
-
-  const tokens = tokenAccounts.value.map((acc) => ({
-    mint: acc.account.data.parsed.info.mint,
-    uiAmount: acc.account.data.parsed.info.tokenAmount.uiAmount,
-  }));
-
-  return { solBalance, tokens };
-}
-
-module.exports = { getSolanaWalletInfo };
+module.exports = {
+  connection,
+  platformKeypair,
+  platformPubkey,
+  tokenMint
+};

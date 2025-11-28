@@ -1,33 +1,38 @@
-// server/routes/wallet.js
 const express = require("express");
 const router = express.Router();
-const { getSolanaWalletInfo } = require("../services/solana");
-const walletController = require("../controllers/walletController");
+const { connection } = require("../services/solana");
 
-
-router.get("/balance", async (req, res) => {
+// Verificar depósito
+router.post("/deposit/check", async (req, res) => {
   try {
-    const address = req.query.address;
-    if (!address) {
-      return res.status(400).json({ error: "Missing address" });
-    }
+    const { signature } = req.body;
 
-    const info = await getSolanaWalletInfo(address);
+    if (!signature) return res.json({ ok: false, message: "signature obrigatória" });
 
-    // retorna no formato que o front espera:
-    return res.json({
-      sol: info.solBalance,
-      tokens: info.tokens
+    const tx = await connection.getTransaction(signature, {
+      maxSupportedTransactionVersion: 0
+    });
+
+    if (!tx) return res.json({ ok: false, message: "Transação não encontrada" });
+
+    const amount = tx.meta.postBalances[0] - tx.meta.preBalances[0];
+    const sol = amount / 1e9;
+
+    if (!req.session.user) return res.json({ ok: false, message: "Usuário não logado" });
+
+    req.session.user.balanceSol =
+      (req.session.user.balanceSol || 0) + sol;
+
+    res.json({
+      ok: true,
+      amount: sol,
+      newBalance: req.session.user.balanceSol
     });
 
   } catch (err) {
-    console.error("wallet/balance error:", err);
-    return res.status(500).json({ error: "Server error" });
+    console.error(err);
+    res.json({ ok: false, message: "Erro interno" });
   }
 });
-
-module.exports = router;
-
-router.post("/send", walletController.sendSOL);
 
 module.exports = router;

@@ -1,54 +1,38 @@
 // server/routes/user.js
 const express = require("express");
 const router = express.Router();
-const { Connection, PublicKey } = require("@solana/web3.js");
-const sessions = require("../sessions");
+const { connection } = require("../services/solana");
+const { PublicKey } = require("@solana/web3.js");
 
-const RPC = process.env.SOLANA_RPC || "https://api.mainnet-beta.solana.com";
-const connection = new Connection(RPC, "confirmed");
-
+// Rota para pegar saldo SOL do usuário
 router.post("/balance", async (req, res) => {
   try {
-    let { userPubkey } = req.body || {};
+    const { walletPubkey } = req.body;
 
-    if (!userPubkey) {
-      const sessionId = req.cookies?.sessionId;
-      if (sessionId && sessions[sessionId]) {
-        userPubkey = sessions[sessionId].walletPubkey;
-      }
+    if (!walletPubkey) {
+      return res.status(400).json({
+        ok: false,
+        message: "walletPubkey obrigatório"
+      });
     }
 
-    if (!userPubkey) {
-      return res.status(400).json({ error: "Missing userPubkey" });
-    }
+    const pubkey = new PublicKey(walletPubkey);
 
-    const pub = new PublicKey(userPubkey);
+    // saldo em lamports
+    const lamports = await connection.getBalance(pubkey);
+    const sol = lamports / 1e9;
 
-    const lamports = await connection.getBalance(pub);
-    const solBalance = lamports / 1e9;
-
-    const tokenResp = await connection.getParsedTokenAccountsByOwner(pub, {
-      programId: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+    return res.json({
+      ok: true,
+      balance: sol
     });
 
-    const tokens = tokenResp.value
-      .map((v) => {
-        try {
-          const info = v.account.data.parsed.info;
-          return {
-            mint: info.mint,
-            uiAmount: info.tokenAmount.uiAmount,
-          };
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean);
-
-    res.json({ solBalance, tokens });
-  } catch (err) {
-    console.error("user/balance error:", err);
-    res.status(500).json({ error: "Failed to get balance" });
+  } catch (e) {
+    console.error("Erro em /user/balance:", e);
+    return res.status(500).json({
+      ok: false,
+      message: "Erro interno ao pegar saldo"
+    });
   }
 });
 

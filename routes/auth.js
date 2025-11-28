@@ -1,161 +1,64 @@
-// server/routes/auth.js
 const express = require("express");
 const router = express.Router();
-
-const { createSession } = require("../sessions");
-const { Keypair } = require("@solana/web3.js");
+const nacl = require("tweetnacl");
 const bs58 = require("bs58");
 const bip39 = require("bip39");
+const { derivePath } = require("ed25519-hd-key");
 
-/**
- * Helper: create a sessionId (simple random string)
- */
-function makeSessionId() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
-
-/**
- * Helper: produce response-safe secretKey array (numbers)
- */
-function secretKeyToArray(u8) {
-  return Array.from(u8);
-}
-
-/**
- * POST /auth/login
- * Creates a new Keypair, stores session and sets cookie `sessionId`
- * Response: { ok: true, walletPubkey }
- */
-router.post("/login", (req, res) => {
+// Importar carteira via seed phrase
+router.post("/import", async (req, res) => {
   try {
-    const kp = Keypair.generate();
-    const walletPubkey = kp.publicKey.toBase58();
-    const secretKey = secretKeyToArray(kp.secretKey);
+    const { mnemonic } = req.body;
 
-    const sessionId = makeSessionId();
-    createSession(sessionId, {
-      walletPubkey,
-      secretKey,
+    if (!mnemonic) {
+      return res.status(400).json({ ok: false, message: "Mnemonic obrigatório" });
+    }
+
+    const valid = bip39.validateMnemonic(mnemonic);
+    if (!valid) {
+      return res.status(400).json({ ok: false, message: "Mnemonic inválido" });
+    }
+
+    const seed = await bip39.mnemonicToSeed(mnemonic.trim());
+    const path = "m/44'/501'/0'/0'";
+    const derived = derivePath(path, seed.toString("hex")).key;
+    const keypair = nacl.sign.keyPair.fromSeed(derived);
+
+    const walletAddress = bs58.encode(keypair.publicKey);
+    const secretKey = Array.from(keypair.secretKey);
+
+    req.session.user = {
+      walletPubkey: walletAddress,
+      balanceSol: 0
+    };
+
+    return res.json({
+      ok: true,
+      walletAddress,
+      secretKey
     });
 
-    // set cookie named "sessionId"
-    res.cookie("sessionId", sessionId, {
-      httpOnly: true,
-      secure: false, // set true in production with https
-      sameSite: "lax",
-    });
-
-    console.log("Created new session for", walletPubkey);
-    return res.json({ ok: true, walletPubkey });
   } catch (err) {
-    console.error("login error:", err);
-    return res.status(500).json({ ok: false, error: "LOGIN_FAILED", details: err.message });
+    console.error(err);
+    res.status(500).json({ ok: false, message: "Erro interno" });
   }
 });
 
-/**
- * POST /auth/import
- * Body: { input: string }
- *
- * Accepts:
- *  - JSON array of 64 numbers (secretKey)
- *  - base58-encoded secretKey (length 64)
- *  - mnemonic (seed phrase) -> uses bip39 to get seed, take first 32 bytes as seed
- *
- * Stores session (cookie `sessionId`) and returns publicKey + secretKey array.
- */
-router.post("/import", async (req, res) => {
-  console.log("=== /auth/import hit ===");
-  const { input } = req.body ?? {};
+// Registrar carteira manualmente
+router.post("/register", (req, res) => {
+  const { walletPubkey } = req.body;
 
-  if (!input || typeof input !== "string") {
-    return res.status(400).json({ ok: false, error: "MISSING_INPUT" });
+  if (!walletPubkey) {
+    return res.status(400).json({ ok: false, message: "walletPubkey obrigatório" });
   }
 
-  try {
-    let keypair = null;
+  req.session.user = { walletPubkey, balanceSol: 0 };
+  res.json({ ok: true });
+});
 
-    const trimmed = input.trim();
-
-    // 1) Try JSON array of numbers
-    if (/^\[.*\]$/.test(trimmed)) {
-      try {
-        const arr = JSON.parse(trimmed);
-        if (Array.isArray(arr) && arr.length >= 64) {
-          // ensure numbers
-          const nums = arr.map((v) => Number(v));
-          const u8 = Uint8Array.from(nums);
-          keypair = Keypair.fromSecretKey(u8);
-        } else {
-          throw new Error("Invalid secretKey array length");
-        }
-      } catch (err) {
-        // fallthrough to other parsers
-      }
-    }
-
-    // 2) Try base58 secret key
-    if (!keypair) {
-      try {
-        const decoded = bs58.decode(trimmed);
-        if (decoded.length === 64 || decoded.length === 32) {
-          // If 32 bytes: treat as seed; if 64: treat as secretKey (ed25519 sk)
-          if (decoded.length === 64) {
-            keypair = Keypair.fromSecretKey(decoded);
-          } else {
-            // 32 bytes seed
-            keypair = Keypair.fromSeed(decoded);
-          }
-        }
-      } catch (err) {
-        // not base58 / ignore
-      }
-    }
-
-    // 3) Try mnemonic (seed phrase)
-    if (!keypair) {
-      // Validate mnemonic using bip39
-      if (bip39.validateMnemonic(trimmed)) {
-        const seed = await bip39.mnemonicToSeed(trimmed); // Buffer
-        // use first 32 bytes as seed (common simple derivation for dev)
-        const seed32 = seed.slice(0, 32);
-        keypair = Keypair.fromSeed(seed32);
-      }
-    }
-
-    if (!keypair) {
-      return res.status(400).json({ ok: false, error: "UNRECOGNIZED_INPUT_FORMAT" });
-    }
-
-    const walletPubkey = keypair.publicKey.toBase58();
-    const secretKeyArr = secretKeyToArray(keypair.secretKey);
-
-    // create session
-    const sessionId = makeSessionId();
-    createSession(sessionId, {
-      walletPubkey,
-      secretKey: secretKeyArr,
-    });
-
-    // set cookie named "sessionId"
-    res.cookie("sessionId", sessionId, {
-      httpOnly: true,
-      secure: false, // use true in production with https
-      sameSite: "lax",
-    });
-
-    console.log("Imported wallet:", walletPubkey);
-
-    // Return secretKey as array (convenient for dev). Remove in production or be careful.
-    return res.json({
-      ok: true,
-      publicKey: walletPubkey,
-      secretKey: secretKeyArr,
-    });
-  } catch (err) {
-    console.error("/auth/import error:", err);
-    return res.status(500).json({ ok: false, error: "IMPORT_FAILED", details: err.message });
-  }
+// Logout
+router.post("/logout", (req, res) => {
+  req.session.destroy(() => res.json({ ok: true }));
 });
 
 module.exports = router;
