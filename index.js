@@ -1,158 +1,61 @@
-// server.js
+// server/server.js
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
-const { Keypair, PublicKey, Connection, SystemProgram, Transaction, sendAndConfirmTransaction } = require("@solana/web3.js");
+const path = require("path");
+
+const { createSession, getSession } = require("./sessions");
+
+const authRoutes = require("./routes/auth");
+const userRoutes = require("./routes/user");
+const walletRoutes = require("./routes/wallet");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const isProduction = process.env.NODE_ENV === "production";
 
-// ==========================
-// CORS CONFIG — OBRIGATÓRIO
-// ==========================
+// configurar CORS
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:5174",
-      "https://veifi-vite.onrender.com", // PRODUÇÃO
-    ],
+    origin: (origin, cb) => {
+      // permitir requisições sem origin (tools) ou dos nossos frontends
+      const allowed = [
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "https://seu-site-frontend.onrender.com", // ajuste se necessário
+      ];
+      if (!origin) return cb(null, true);
+      if (allowed.indexOf(origin) !== -1 || isProduction) return cb(null, true);
+      cb(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
     methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type"],
-    credentials: true, // permite COOKIES irem/voltarem
   })
 );
 
-// IMPORTANTE para browsers modernos
+// aceitar preflight global
 app.options("*", cors());
 
 app.use(express.json());
 app.use(cookieParser());
 
-// RPC
-const RPC = "https://frequent-soft-daylight.solana-mainnet.quiknode.pro/db097341fa55b3a5bf3e5d96776910263c3a492a/";
-const connection = new Connection(RPC);
-
-const sessions = new Map();
-
-// ==========================
-// SESSÕES
-// ==========================
-function getSession(sessId) {
-  return sessId && sessions.has(sessId) ? sessions.get(sessId) : null;
-}
-
-function createSession(pubkey, res) {
-  const sid = Math.random().toString(36).slice(2);
-
-  sessions.set(sid, { walletPubkey: pubkey });
-
-  res.cookie("sid", sid, {
-    httpOnly: true,
-    secure: true,      // HTTPS obrigatório no Render
-    sameSite: "none",  // precisa para cross-site cookies
-  });
-
-  return sid;
-}
-
-// ==========================
-// IMPORTAR WALLET
-// ==========================
-app.post("/auth/import", (req, res) => {
-  const { input } = req.body;
-
-  try {
-    const parsed = JSON.parse(input);
-
-    if (!Array.isArray(parsed) || parsed.length !== 64) {
-      return res.status(400).json({ message: "Esperado array JSON de 64 números." });
-    }
-
-    const kp = Keypair.fromSecretKey(Uint8Array.from(parsed));
-    const pubkey = kp.publicKey.toBase58();
-
-    createSession(pubkey, res);
-
-    return res.json({
-      ok: true,
-      walletAddress: pubkey,
-      secretKey: Array.from(kp.secretKey),
-    });
-  } catch (e) {
-    return res.status(400).json({ message: "Entrada inválida." });
-  }
+// middleware para popular req.sessionObject a partir do cookie sid
+app.use((req, res, next) => {
+  const sess = getSession(req);
+  if (sess) req.sessionObject = sess;
+  next();
 });
 
-// ==========================
-// SESSÃO ATUAL
-// ==========================
-app.get("/session/me", (req, res) => {
-  const session = getSession(req.cookies.sid);
+// rotas
+app.use("/auth", authRoutes);
+app.use("/user", userRoutes);
+app.use("/wallet", walletRoutes);
 
-  if (!session) return res.json({ ok: false });
+// rota health
+app.get("/", (req, res) => res.send("API Veilfi OK"));
 
-  return res.json({ ok: true, user: session });
-});
-
-// ==========================
-// GET BALANCE
-// ==========================
-app.post("/user/balance", async (req, res) => {
-  const { userPubkey } = req.body;
-
-  if (!userPubkey) return res.status(400).json({ message: "userPubkey obrigatório" });
-
-  try {
-    const pubkey = new PublicKey(userPubkey);
-    const lamports = await connection.getBalance(pubkey);
-    return res.json({ balance: lamports / 1e9 });
-  } catch {
-    return res.status(400).json({ message: "Erro ao buscar saldo" });
-  }
-});
-
-// ==========================
-// SEND SOL
-// ==========================
-app.post("/wallet/send", async (req, res) => {
-  try {
-    const session = getSession(req.cookies.sid);
-
-    if (!session) return res.status(401).json({ ok: false, error: "NO_SESSION" });
-
-    const { walletPubkey, secretKey } = session;
-    const { to, amount } = req.body;
-
-    if (!to || !amount) return res.status(400).json({ error: "INVALID_INPUT" });
-
-    const fromKeypair = Keypair.fromSecretKey(Uint8Array.from(secretKey));
-    const toPubkey = new PublicKey(to);
-    const lamports = Math.floor(amount * 1e9);
-
-    const tx = new Transaction().add(
-      SystemProgram.transfer({
-        fromPubkey: fromKeypair.publicKey,
-        toPubkey: toPubkey,
-        lamports,
-      })
-    );
-
-    const signature = await sendAndConfirmTransaction(connection, tx, [fromKeypair]);
-
-    return res.json({
-      ok: true,
-      signature,
-      explorer: `https://explorer.solana.com/tx/${signature}`,
-    });
-
-  } catch (err) {
-    console.log("SEND ERROR", err);
-    return res.status(500).json({ ok: false, error: "SEND_FAILED", details: err.message });
-  }
-});
-
-// START SERVER
+// start
 app.listen(PORT, () => {
-  console.log(`🔥 API Rodando em http://localhost:${PORT}`);
+  console.log(`API rodando em :${PORT} — production=${isProduction}`);
 });
