@@ -1,61 +1,110 @@
-// server/server.js
+// server/routes/wallet.js
 const express = require("express");
-const cors = require("cors");
-const cookieParser = require("cookie-parser");
-const path = require("path");
+const router = express.Router();
 
-const { createSession, getSession } = require("./sessions");
+const {
+  Connection,
+  PublicKey,
+  Keypair,
+  SystemProgram,
+  Transaction,
+  sendAndConfirmTransaction
+} = require("@solana/web3.js");
 
-const authRoutes = require("./routes/auth");
-const userRoutes = require("./routes/user");
-const walletRoutes = require("./routes/wallet");
+const { getSession } = require("../sessions");
 
-const app = express();
-const PORT = process.env.PORT || 3001;
-const isProduction = process.env.NODE_ENV === "production";
+// RPC
+const RPC_URL =
+  "https://frequent-soft-daylight.solana-mainnet.quiknode.pro/db097341fa55b3a5bf3e5d96776910263c3a492a/";
 
-// configurar CORS
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      // permitir requisições sem origin (tools) ou dos nossos frontends
-      const allowed = [
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "https://seu-site-frontend.onrender.com", // ajuste se necessário
-      ];
-      if (!origin) return cb(null, true);
-      if (allowed.indexOf(origin) !== -1 || isProduction) return cb(null, true);
-      cb(new Error("Not allowed by CORS"));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type"],
-  })
-);
+// ==============================
+// GET BALANCE
+// ==============================
+router.post("/balance", async (req, res) => {
+  try {
+    const { userPubkey } = req.body;
 
-// aceitar preflight global
-app.options("*", cors());
+    if (!userPubkey) {
+      return res.status(400).json({ ok: false, error: "NO_PUBKEY" });
+    }
 
-app.use(express.json());
-app.use(cookieParser());
+    const connection = new Connection(RPC_URL);
+    const lamports = await connection.getBalance(new PublicKey(userPubkey));
 
-// middleware para popular req.sessionObject a partir do cookie sid
-app.use((req, res, next) => {
-  const sess = getSession(req);
-  if (sess) req.sessionObject = sess;
-  next();
+    return res.json({
+      ok: true,
+      balance: lamports / 1e9,
+    });
+  } catch (err) {
+    console.error("BALANCE ERROR:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "BALANCE_FAILED",
+      details: err.message,
+    });
+  }
 });
 
-// rotas
-app.use("/auth", authRoutes);
-app.use("/user", userRoutes);
-app.use("/wallet", walletRoutes);
+// ==============================
+// SEND SOL
+// ==============================
+router.post("/send", async (req, res) => {
+  try {
+    const session = getSession(req);
 
-// rota health
-app.get("/", (req, res) => res.send("API Veilfi OK"));
+    if (!session)
+      return res.status(401).json({ ok: false, error: "NO_SESSION" });
 
-// start
-app.listen(PORT, () => {
-  console.log(`API rodando em :${PORT} — production=${isProduction}`);
+    const { walletPubkey, secretKey } = session;
+
+    if (!walletPubkey || !secretKey)
+      return res
+        .status(400)
+        .json({ ok: false, error: "SESSION_NO_KEYPAIR" });
+
+    const { to, amount } = req.body;
+
+    if (!to || typeof to !== "string")
+      return res.status(400).json({ ok: false, error: "INVALID_TO" });
+
+    if (!amount || amount <= 0)
+      return res.status(400).json({ ok: false, error: "INVALID_AMOUNT" });
+
+    const lamports = Math.floor(amount * 1e9);
+
+    const connection = new Connection(RPC_URL, "confirmed");
+
+    const fromKeypair = Keypair.fromSecretKey(Uint8Array.from(secretKey));
+    const toPubkey = new PublicKey(to);
+
+    const tx = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: fromKeypair.publicKey,
+        toPubkey,
+        lamports,
+      })
+    );
+
+    const signature = await sendAndConfirmTransaction(
+      connection,
+      tx,
+      [fromKeypair],
+      { commitment: "confirmed" }
+    );
+
+    return res.json({
+      ok: true,
+      signature,
+      explorer: `https://explorer.solana.com/tx/${signature}`,
+    });
+  } catch (err) {
+    console.error("SEND ERROR:", err);
+    return res.status(500).json({
+      ok: false,
+      error: "SEND_FAILED",
+      details: err.message,
+    });
+  }
 });
+
+module.exports = router;
