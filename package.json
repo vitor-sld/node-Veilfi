@@ -6,6 +6,9 @@
     "start": "node index.js",
     "migrate": "node run_migrations.js"
   },
+  "engines": {
+    "node": "24.x"
+  },
   "dependencies": {
     "@scure/base": "^2.0.0",
     "@solana/spl-token": "^0.3.11",
