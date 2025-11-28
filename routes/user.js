@@ -1,21 +1,28 @@
-const { Connection, PublicKey } = require("@solana/web3.js");
+const express = require("express");
+const router = express.Router();
+const solanaWeb3 = require("@solana/web3.js");
 
-const connection = new Connection("https://api.mainnet-beta.solana.com");
-
-app.post("/user/balance", async (req, res) => {
-  const { userPubkey } = req.body;
-
-  if (!userPubkey) {
-    return res.status(400).json({ message: "userPubkey is required" });
-  }
-
+router.post("/balance", async (req, res) => {
   try {
-    const pubkey = new PublicKey(userPubkey);
-    const lamports = await connection.getBalance(pubkey);
-    const sol = lamports / 1e9;
-    res.json({ balance: sol });
+    const { userPubkey } = req.body;
+    if (!userPubkey) {
+      return res.status(400).json({ error: "Missing userPubkey" });
+    }
+
+    const connection = new solanaWeb3.Connection(
+      solanaWeb3.clusterApiUrl("mainnet-beta"),
+      "confirmed"
+    );
+
+    const publicKey = new solanaWeb3.PublicKey(userPubkey);
+    const lamports = await connection.getBalance(publicKey);
+    const sol = lamports / solanaWeb3.LAMPORTS_PER_SOL;
+
+    return res.json({ balance: sol });
   } catch (err) {
-    console.error("Erro ao buscar saldo:", err.message);
-    res.status(400).json({ message: "Erro ao buscar saldo" });
+    console.error("Erro balance:", err);
+    return res.status(500).json({ error: "Balance error" });
   }
 });
+
+module.exports = router;
