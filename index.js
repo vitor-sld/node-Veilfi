@@ -1,76 +1,73 @@
-// server/server.js
+// server/index.js
 const express = require("express");
+const cors = require("cors");
 const cookieParser = require("cookie-parser");
+
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/user");
 const walletRoutes = require("./routes/wallet");
 const { getSession } = require("./sessions");
-const sessionRoutes = require("./routes/session");
-
-
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// 🎯 Origens permitidas
-const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "https://veilfi-vite.onrender.com",
-  "https://veilfi.com",
-];
+const isProduction = process.env.NODE_ENV === "production";
 
-// 🚨 DEBUG: loga todo request
-app.use((req, _, next) => {
-  console.log("REQ:", req.method, req.path);
-  console.log("ORIGIN:", req.headers.origin);
-  console.log("COOKIE:", req.headers.cookie);
-  next();
-});
+// -----------------------------------------------------
+// ✅ CORS — ESSENCIAL PARA COOKIES FUNCIONAREM NO RENDER
+// -----------------------------------------------------
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "https://veilfi-vite.onrender.com",
+    ],
+    credentials: true,
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type"],
+  })
+);
 
-// ⭐ CORS COMPLETO
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
+// Preflight global
+app.options("*", cors());
 
-  if (allowedOrigins.includes(origin)) {
-    res.header("Access-Control-Allow-Origin", origin);
-  }
-
-  res.header("Access-Control-Allow-Credentials", "true");
-  res.header("Access-Control-Allow-Headers", "Content-Type");
-  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-
-  next();
-});
+// Middlewares essenciais
 app.use(express.json());
 app.use(cookieParser());
 
-// ✨ Sessão
+// -----------------------------------------------------
+// Middleware para vincular sessão automaticamente
+// -----------------------------------------------------
+const { getSession: getSessionFromCookie } = require("./sessions");
+
 app.use((req, res, next) => {
-  const session = getSession(req);
-  if (session) {
-    console.log("✔ SESSION FOUND:", session.walletPubkey);
-  } else {
-    console.log("❌ NO SESSION");
-  }
-  req.sessionObject = session;
+  const sess = getSessionFromCookie(req);
+  if (sess) req.sessionObject = sess;
   next();
 });
-app.use("/session", sessionRoutes);
 
-// Rotas
-app.use("/auth", authRoutes);
-app.use("/user", userRoutes);
-app.use("/wallet", walletRoutes);
+// -----------------------------------------------------
+// Rotas principais
+// -----------------------------------------------------
+app.use("/auth", authRoutes);     // Import wallet / login
+app.use("/user", userRoutes);     // Balance (/user/balance)
+app.use("/wallet", walletRoutes); // Payment (/wallet/send, /wallet/balance)
 
-// Health
-app.get("/", (req, res) => res.send("API Veilfi OK"));
+// -----------------------------------------------------
+// Checagem rápida da API
+// -----------------------------------------------------
+app.get("/", (req, res) => {
+  res.json({
+    ok: true,
+    message: "API VeilFi rodando",
+    env: process.env.NODE_ENV,
+  });
+});
 
+// -----------------------------------------------------
 // Start
-app.listen(PORT, () =>
-  console.log(`🚀 Server on ${PORT}`)
-);
+// -----------------------------------------------------
+app.listen(PORT, () => {
+  console.log(`🔥 API rodando na porta ${PORT} (production=${isProduction})`);
+});
