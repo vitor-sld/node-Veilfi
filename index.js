@@ -21,6 +21,7 @@ app.use(
       "http://localhost:5173",
       "http://localhost:5174",
       "https://veifi-vite.onrender.com",
+      "https://veilfi.space/"
     ],
     credentials: true,
     methods: ["GET", "POST", "OPTIONS"],
