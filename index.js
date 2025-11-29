@@ -6,6 +6,7 @@ const cookieParser = require("cookie-parser");
 const authRoutes = require("./routes/auth");
 const walletRoutes = require("./routes/wallet");
 const userRoutes = require("./routes/user");
+const sessionRoutes = require("./routes/session");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -33,7 +34,7 @@ app.options("*", cors());
 app.use("/auth", authRoutes);
 app.use("/wallet", walletRoutes);
 app.use("/user", userRoutes);
-
+app.use("/session", sessionRoutes)
 app.get("/", (req, res) => res.send("API OK"));
 
 app.listen(PORT, () => console.log("API ON PORT", PORT));
