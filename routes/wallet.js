@@ -18,7 +18,27 @@ const RPC_URL =
 
 const connection = new Connection(RPC_URL, "confirmed");
 
-/* ========= BALANCE ========= */
+/* ===========================================================
+   🔥 CORS FIX — ESSENCIAL PARA O RENDER ACEITAR PRE-FLIGHT
+=========================================================== */
+router.use((req, res, next) => {
+  const origin = req.headers.origin || "*";
+
+  res.header("Access-Control-Allow-Origin", origin);
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200); // preflight resolvido!
+  }
+
+  next();
+});
+
+/* ===========================================================
+   🟢 BALANCE
+=========================================================== */
 router.post("/balance", async (req, res) => {
   try {
     const { userPubkey } = req.body;
@@ -27,13 +47,20 @@ router.post("/balance", async (req, res) => {
       return res.status(400).json({ error: "userPubkey required" });
 
     const lamports = await connection.getBalance(new PublicKey(userPubkey));
-    return res.json({ ok: true, balance: lamports / 1e9 });
+
+    return res.json({
+      ok: true,
+      balance: lamports / 1e9,
+    });
   } catch (err) {
+    console.error("BALANCE ERROR:", err);
     return res.status(500).json({ ok: false, error: "BALANCE_FAILED" });
   }
 });
 
-/* ========= SEND SOL ========= */
+/* ===========================================================
+   🟡 SEND SOL
+=========================================================== */
 router.post("/send", async (req, res) => {
   try {
     const session = getSession(req);
@@ -42,6 +69,11 @@ router.post("/send", async (req, res) => {
       return res.status(401).json({ ok: false, error: "NO_SESSION" });
 
     const { walletPubkey, secretKey } = session;
+
+    if (!secretKey)
+      return res
+        .status(400)
+        .json({ ok: false, error: "SESSION_NO_KEYPAIR" });
 
     const { to, amount } = req.body;
 
@@ -71,7 +103,11 @@ router.post("/send", async (req, res) => {
     });
   } catch (err) {
     console.error("SEND ERROR:", err);
-    return res.status(500).json({ ok: false, error: "SEND_FAILED" });
+    return res.status(500).json({
+      ok: false,
+      error: "SEND_FAILED",
+      details: err.message,
+    });
   }
 });
 
