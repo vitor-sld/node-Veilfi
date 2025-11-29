@@ -14,14 +14,13 @@ const PORT = process.env.PORT || 3001;
 app.use(express.json());
 app.use(cookieParser());
 
-// CORS — MUITO IMPORTANTE — versão correta
 app.use(
   cors({
     origin: [
+      "https://veilfi.space",
       "http://localhost:5173",
       "http://localhost:5174",
       "https://veifi-vite.onrender.com",
-      "https://veilfi.space/"
     ],
     credentials: true,
     methods: ["GET", "POST", "OPTIONS"],
