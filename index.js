@@ -7,6 +7,7 @@ const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/user");
 const walletRoutes = require("./routes/wallet");
 const { getSession } = require("./sessions");
+const sessionRoutes = require("./routes/session");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -53,7 +54,7 @@ app.use((req, res, next) => {
 app.use("/auth", authRoutes);     // Import wallet / login
 app.use("/user", userRoutes);     // Balance (/user/balance)
 app.use("/wallet", walletRoutes); // Payment (/wallet/send, /wallet/balance)
-
+app.use("/session", sessionRoutes);
 // -----------------------------------------------------
 // Checagem rápida da API
 // -----------------------------------------------------

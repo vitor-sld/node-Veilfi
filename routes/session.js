@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
-
 const { getSession } = require("../sessions");
 
+// GET /session/me
 router.get("/me", (req, res) => {
   const session = getSession(req);
 
@@ -12,9 +12,7 @@ router.get("/me", (req, res) => {
 
   return res.json({
     ok: true,
-    user: {
-      walletPubkey: session.walletPubkey
-    }
+    walletPubkey: session.walletPubkey,
   });
 });
 
