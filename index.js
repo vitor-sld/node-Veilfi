@@ -4,63 +4,49 @@ const cors = require("cors");
 const cookieParser = require("cookie-parser");
 
 const authRoutes = require("./routes/auth");
-const userRoutes = require("./routes/user");
 const walletRoutes = require("./routes/wallet");
+const userRoutes = require("./routes/user");
+
 const { getSession } = require("./sessions");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const isProd = process.env.NODE_ENV === "production";
 
-const isProduction = process.env.NODE_ENV === "production";
-
-// ===============================
-// CORS (com cookies)
-// ===============================
+/* ---------------------- CORS CONFIG ---------------------- */
 app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      "http://localhost:5174",
-      "https://veilfi-vite.onrender.com"
+      "https://veifi-vite.onrender.com",
     ],
     credentials: true,
+    allowedHeaders: ["Content-Type"],
     methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type"]
   })
 );
 
-app.options("*", cors()); // preflight
+// Preflight global:
+app.options("*", cors());
 
 app.use(express.json());
 app.use(cookieParser());
 
-// ===============================
-// SESSION middleware
-// Deixa req.sessionObject disponível
-// ===============================
+/* ---------------------- SESSION MIDDLEWARE ---------------------- */
 app.use((req, res, next) => {
-  const sessionObject = getSession(req);
-  if (sessionObject) req.sessionObject = sessionObject;
+  req.sessionObject = getSession(req);
   next();
 });
 
-// ===============================
-// ROTAS
-// ===============================
-app.use("/auth", authRoutes);     // /auth/import, /auth/login ...
-app.use("/user", userRoutes);     // /user/balance (se existir) 
-app.use("/wallet", walletRoutes); // /wallet/balance + /wallet/send
+/* ---------------------- ROUTES ---------------------- */
+app.use("/auth", authRoutes);
+app.use("/wallet", walletRoutes);
+app.use("/user", userRoutes);
 
-// ===============================
-// HEALTH CHECK
-// ===============================
-app.get("/", (req, res) => {
-  res.send("API Veilfi OK");
-});
+/* ---------------------- HEALTH ---------------------- */
+app.get("/", (req, res) => res.send("API Veilfi OK"));
 
-// ===============================
-// START SERVER
-// ===============================
+/* ---------------------- START ---------------------- */
 app.listen(PORT, () => {
-  console.log(`🚀 API rodando na porta ${PORT} — production=${isProduction}`);
+  console.log(`🚀 API running on port ${PORT} — prod=${isProd}`);
 });
