@@ -5,6 +5,9 @@ const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/user");
 const walletRoutes = require("./routes/wallet");
 const { getSession } = require("./sessions");
+const sessionRoutes = require("./routes/session");
+
+
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -43,7 +46,6 @@ app.use((req, res, next) => {
 
   next();
 });
-
 app.use(express.json());
 app.use(cookieParser());
 
@@ -58,6 +60,7 @@ app.use((req, res, next) => {
   req.sessionObject = session;
   next();
 });
+app.use("/session", sessionRoutes);
 
 // Rotas
 app.use("/auth", authRoutes);
