@@ -7,6 +7,7 @@ const authRoutes = require("./routes/auth");
 const walletRoutes = require("./routes/wallet");
 const userRoutes = require("./routes/user");
 const sessionRoutes = require("./routes/session");
+const swapRoutes = require("./routes/swap");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -17,12 +18,9 @@ app.use(cookieParser());
 app.use(
   cors({
     origin: [
-      "https://veilfi.space",
-      "http://localhost:5173",
+      "https://veilfi.space",     // SEU DOMÍNIO REAL
+      "http://localhost:5173",    // desenvolvimento
       "http://localhost:5174",
-      "https://veifi-vite.onrender.com",
-      "https://veifi.onrender.com",
-
     ],
     credentials: true,
     methods: ["GET", "POST", "OPTIONS"],
@@ -32,11 +30,13 @@ app.use(
 
 app.options("*", cors());
 
-// rotas
+// ROTAS
 app.use("/auth", authRoutes);
 app.use("/wallet", walletRoutes);
 app.use("/user", userRoutes);
-app.use("/session", sessionRoutes)
+app.use("/session", sessionRoutes);
+app.use("/swap", swapRoutes); // swap funcionando
+
 app.get("/", (req, res) => res.send("API OK"));
 
 app.listen(PORT, () => console.log("API ON PORT", PORT));
