@@ -24,21 +24,31 @@ app.use(express.json());
 app.use(cookieParser());
 
 /* =============================================
-   CORS (corrigido)
+   CORS
 ============================================= */
 app.use(
   cors({
     origin: [
-      "http://localhost:5173",            // front local
-      "https://node-veilfi-jtae.onrender.com", // backend URL (Render)
-      process.env.FRONTEND_ORIGIN         // front em produção
+      "http://localhost:5173",
+      "https://node-veilfi-jtae.onrender.com",
+      "https://veilfi.space",
+      "https://www.veilfi.space",
+      process.env.FRONTEND_ORIGIN
     ].filter(Boolean),
     credentials: true,
   })
 );
 
 /* =============================================
-   EXPRESS-SESSION (DEV + PROD)
+   CREDENTIALS HEADER (obrigatório no Render)
+============================================= */
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Credentials", "true");
+  next();
+});
+
+/* =============================================
+   EXPRESS-SESSION
 ============================================= */
 app.use(
   session({
@@ -48,13 +58,8 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-
-      // ⚠ ESSENCIAL:
-      // Localhost = http -> secure:false / sameSite:lax
-      // Render(prod) = https -> secure:true / sameSite:none
       secure: isProd ? true : false,
       sameSite: isProd ? "none" : "lax",
-
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   })
