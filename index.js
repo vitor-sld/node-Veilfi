@@ -30,12 +30,13 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      "https://node-veilfi-jtae.onrender.com", // <---- OBRIGATÓRIO
-      process.env.FRONTEND_ORIGIN || ""
-    ],
+      "https://node-veilfi-jtae.onrender.com",
+      process.env.FRONTEND_ORIGIN
+    ].filter(Boolean),
     credentials: true,
   })
 );
+
 
 
 /* =============================================
@@ -43,20 +44,15 @@ app.use(
 ============================================= */
 app.use(
   session({
-    name: process.env.SESSION_NAME || "sid",
-    secret: process.env.SESSION_SECRET || "dev-secret-change-me",
+    name: "sid",
+    secret: process.env.SESSION_SECRET || "dev-secret",
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-
-      // 🔥 Aqui está a correção real:
-      // localhost → HTTP: secure:false / sameSite:lax
-      // produção → HTTPS: secure:true / sameSite:none
-      secure: isProd ? true : false,
-      sameSite: isProd ? "none" : "lax",
-
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 dias
+      secure: true,       // <---- obrigatório no Render (HTTPS)
+      sameSite: "none",   // <---- obrigatório para cookies cross-domain
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   })
 );
