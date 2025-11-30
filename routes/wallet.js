@@ -1,67 +1,84 @@
-// server/routes/wallet.js
+// server.js
 const express = require("express");
-const router = express.Router();
-
+const bodyParser = require("body-parser");
+const bs58 = require("bs58");
 const {
   Connection,
-  PublicKey,
   Keypair,
   SystemProgram,
   Transaction,
   sendAndConfirmTransaction,
+  LAMPORTS_PER_SOL,
+  PublicKey,
+  clusterApiUrl,
 } = require("@solana/web3.js");
 
-const RPC = process.env.RPC_URL || "https://api.devnet.solana.com";
-const connection = new Connection(RPC, "confirmed");
+const app = express();
+app.use(bodyParser.json());
 
-router.post("/send", async (req, res) => {
+// CONFIG
+const RPC_CLUSTER = "devnet"; // 'mainnet-beta' em produção (cuidado!)
+const connection = new Connection(clusterApiUrl(RPC_CLUSTER), "confirmed");
+
+// helper: converte pk que pode ser base58 string ou array JSON string
+function pkToKeypair(pkInput) {
+  if (!pkInput) throw new Error("No pk provided");
+
+  // se já for array (objeto)
+  if (Array.isArray(pkInput)) {
+    return Keypair.fromSecretKey(Uint8Array.from(pkInput));
+  }
+
+  // se for string, pode ser JSON array ou base58
   try {
-    const sess = req.session?.sessionObject;
+    // tenta parsear JSON array
+    const maybeArray = JSON.parse(pkInput);
+    if (Array.isArray(maybeArray)) {
+      return Keypair.fromSecretKey(Uint8Array.from(maybeArray));
+    }
+  } catch (e) {
+    // não é JSON -> continuar
+  }
 
-    if (!sess) return res.status(401).json({ ok: false, error: "NO_SESSION" });
+  // assume base58 string
+  try {
+    const secret = bs58.decode(pkInput);
+    return Keypair.fromSecretKey(secret);
+  } catch (e) {
+    throw new Error("Invalid private key format (not JSON array nor base58).");
+  }
+}
 
-    const { secretKey, walletPubkey } = sess;
-    const { to, amount } = req.body;
-
-    if (!Array.isArray(secretKey) || secretKey.length !== 64) {
-      return res.status(400).json({ ok: false, error: "INVALID_SECRET_KEY" });
+app.post("/send", async (req, res) => {
+  try {
+    const { pk, to, amount } = req.body;
+    if (!pk || !to || !amount) {
+      return res.status(400).json({ error: "pk, to and amount required" });
     }
 
-    const fromKeypair = Keypair.fromSecretKey(
-      Uint8Array.from(secretKey)
+    const sender = pkToKeypair(pk);
+    const toPub = new PublicKey(to);
+
+    // construir transação de transferência simples
+    const lamports = Math.round(Number(amount) * LAMPORTS_PER_SOL);
+    if (isNaN(lamports) || lamports <= 0) throw new Error("invalid amount");
+
+    const tx = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: sender.publicKey,
+        toPubkey: toPub,
+        lamports,
+      })
     );
 
-    const toPubkey = new PublicKey(to);
-    const lamports = Math.floor(Number(amount) * 1e9);
-
-    const instr = SystemProgram.transfer({
-      fromPubkey: fromKeypair.publicKey,
-      toPubkey,
-      lamports,
-    });
-
-    const tx = new Transaction().add(instr);
-
-    const latest = await connection.getLatestBlockhash();
-    tx.recentBlockhash = latest.blockhash;
-    tx.feePayer = fromKeypair.publicKey;
-
-    const signature = await sendAndConfirmTransaction(
-      connection,
-      tx,
-      [fromKeypair]
-    );
-
-    res.json({
-      ok: true,
-      signature,
-      explorer: `https://explorer.solana.com/tx/${signature}?cluster=devnet`,
-    });
-
-  } catch (e) {
-    console.error("SEND ERROR:", e);
-    res.status(500).json({ ok: false, error: "SEND_FAILED", details: e.message });
+    // enviar e confirmar (usa a keypair para assinar)
+    const signature = await sendAndConfirmTransaction(connection, tx, [sender]);
+    return res.json({ signature });
+  } catch (err) {
+    console.error("send error:", err);
+    return res.status(500).json({ error: err.message || String(err) });
   }
 });
 
-module.exports = router;
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => console.log(`Backend rodando na porta ${PORT}`));

@@ -7,7 +7,7 @@ require("dotenv").config();
 
 // Rotas
 const authRoutes = require("./routes/auth");
-const walletRoutes = require("./routes/wallet");
+const walletRoutes = require("./routes/wallet"); // <- aqui já puxa o /wallet/send
 const userRoutes = require("./routes/user");
 const sessionRoutes = require("./routes/session");
 
@@ -43,7 +43,7 @@ app.use(
 );
 
 /* =============================================
-   SESSION (A CONFIGURAÇÃO CERTA)
+   SESSION (CONFIGURAÇÃO DA SUA APP)
 ============================================= */
 app.use(
   session({
@@ -54,8 +54,7 @@ app.use(
     cookie: {
       httpOnly: true,
       secure: true,         // Render = HTTPS
-      sameSite: "none",     // CROSS DOMAIN NECESSÁRIO!
-      // ❗️ NÃO DEFINA domain
+      sameSite: "none",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   })
@@ -65,7 +64,7 @@ app.use(
    ROTAS
 ============================================= */
 app.use("/auth", authRoutes);
-app.use("/wallet", walletRoutes);
+app.use("/wallet", walletRoutes);   // <---- AQUI sua nova rota /wallet/send funciona
 app.use("/user", userRoutes);
 app.use("/session", sessionRoutes);
 
