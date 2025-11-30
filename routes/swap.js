@@ -1,77 +1,143 @@
+// ========================
+//  Arquivo: swap.js
+// ========================
+
+require("dotenv").config();
 const express = require("express");
 const router = express.Router();
+
 const {
-  Connection,
-  Keypair,
-  VersionedTransaction,
+    Connection,
+    Keypair,
+    PublicKey,
+    Transaction,
+    SystemProgram,
+    LAMPORTS_PER_SOL,
+    sendAndConfirmTransaction,
 } = require("@solana/web3.js");
 
-const RAYDIUM = "https://api-v3.raydium.io";
-const connection = new Connection("https://api.mainnet-beta.solana.com");
+const {
+    getOrCreateAssociatedTokenAccount,
+    transfer,
+} = require("@solana/spl-token");
 
-// TOKEN DO CLIENTE:
-const TOKEN_MINT = "VSKXrgwu5mtbdSZS7Au81p1RgLQupWwYXX1L2cWpump";
-
-// SOL (wrapped)
-const SOL_MINT = "So11111111111111111111111111111111111111112";
 
 // ================================
-// SWAP  →  SOL  →  PUMP TOKEN
+//   CONFIGURAÇÕES DO SISTEMA
 // ================================
-router.post("/buy", async (req, res) => {
-  try {
-    const { secretKey, amountSol } = req.body;
 
-    if (!secretKey || !amountSol)
-      return res.status(400).json({ error: "Missing data" });
+// RPC – pode usar o do seu servidor, Alchemy, Helius, Triton etc.
+const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
 
-    const user = Keypair.fromSecretKey(Uint8Array.from(secretKey));
-    const lamports = Math.floor(Number(amountSol) * 1e9);
+// Chaves da plataforma (Tesouro)
+const plataformaPublicKey = new PublicKey(process.env.carteira_publica);
+const plataformaPrivateKey = Uint8Array.from(JSON.parse(process.env.carteira_privada));
+const plataformaKeypair = Keypair.fromSecretKey(plataformaPrivateKey);
 
-    // 1) QUOTE (rota)
-    const quoteUrl =
-      `${RAYDIUM}/ammV3/quote?inputMint=${SOL_MINT}&outputMint=${TOKEN_MINT}&amount=${lamports}`;
+// Mint do token do cliente (PAMP)
+const mintPump = new PublicKey(process.env.moedaCliente);
 
-    const quote = await fetch(quoteUrl).then(r => r.json());
 
-    if (!quote?.data) {
-      return res.status(400).json({ error: "No route available" });
+// ==========================================
+//         ENDPOINT DO SWAP
+// ==========================================
+router.post("/swap", async (req, res) => {
+
+    try {
+        const { carteiraUsuarioPublica, carteiraUsuarioPrivada, amountSOL } = req.body;
+
+        if (!carteiraUsuarioPublica || !carteiraUsuarioPrivada || !amountSOL) {
+            return res.status(400).json({ error: "Dados incompletos." });
+        }
+
+        const quantidadeSol = parseFloat(amountSOL);
+
+        if (quantidadeSol <= 0) {
+            return res.status(400).json({ error: "Valor inválido." });
+        }
+
+        // Chave do usuário
+        const usuarioPublicKey = new PublicKey(carteiraUsuarioPublica);
+        const usuarioPrivateKey = Uint8Array.from(JSON.parse(carteiraUsuarioPrivada));
+        const usuarioKeypair = Keypair.fromSecretKey(usuarioPrivateKey);
+
+
+        // ===========================================================
+        //  1️⃣   DEBITAR SOL DO USUÁRIO → envio para o tesouro
+        // ===========================================================
+        const transferirSolTx = new Transaction().add(
+            SystemProgram.transfer({
+                fromPubkey: usuarioPublicKey,
+                toPubkey: plataformaPublicKey,
+                lamports: quantidadeSol * LAMPORTS_PER_SOL,
+            })
+        );
+
+        const assinaturaSol = await sendAndConfirmTransaction(
+            connection,
+            transferirSolTx,
+            [usuarioKeypair]
+        );
+
+
+        // ===========================================================
+        //  2️⃣   CALCULAR QUANTO PUMP O USUÁRIO RECEBE
+        // ===========================================================
+        // taxa de conversão (coloque a sua)
+        const TAXA = 1000; // Exemplo: 1 SOL = 1000 PUMP
+
+        const quantidadePump = quantidadeSol * TAXA;
+
+
+        // ===========================================================
+        //  3️⃣   ENVIAR PUMP PARA O USUÁRIO
+        // ===========================================================
+
+        // Conta de token PUMP do tesouro
+        const ataTesouro = await getOrCreateAssociatedTokenAccount(
+            connection,
+            plataformaKeypair,
+            mintPump,
+            plataformaPublicKey
+        );
+
+        // Conta de token PUMP do usuário
+        const ataUsuario = await getOrCreateAssociatedTokenAccount(
+            connection,
+            plataformaKeypair,
+            mintPump,
+            usuarioPublicKey
+        );
+
+        const assinaturaPump = await transfer(
+            connection,
+            plataformaKeypair,
+            ataTesouro.address,
+            ataUsuario.address,
+            plataformaKeypair.publicKey,
+            quantidadePump
+        );
+
+
+        // ===========================================================
+        //        FINALIZAÇÃO
+        // ===========================================================
+        return res.json({
+            sucesso: true,
+            mensagem: "Swap realizado com sucesso!",
+            sol_debitado: quantidadeSol,
+            pump_creditado: quantidadePump,
+            assinatura_saqueSOL: assinaturaSol,
+            assinatura_envioPUMP: assinaturaPump,
+        });
+
+
+    } catch (err) {
+        console.error("Erro no swap:", err);
+        return res.status(500).json({ error: "Erro ao realizar o swap." });
     }
-
-    // 2) CRIA A TRANSAÇÃO
-    const swapTx = await fetch(`${RAYDIUM}/ammV3/swap`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        owner: user.publicKey.toBase58(),
-        inputMint: SOL_MINT,
-        outputMint: TOKEN_MINT,
-        amount: lamports,
-        slippage: 1, // 1% = seguro
-      }),
-    }).then(r => r.json());
-
-    if (!swapTx?.data?.swapTransaction) {
-      console.log("Raydium error", swapTx);
-      return res.status(400).json({ error: "Cannot create swap transaction" });
-    }
-
-    // 3) ASSINA & ENVIA
-    const txBuf = Buffer.from(swapTx.data.swapTransaction, "base64");
-    const tx = VersionedTransaction.deserialize(txBuf);
-
-    tx.sign([user]);
-
-    const sig = await connection.sendRawTransaction(tx.serialize(), {
-      skipPreflight: true,
-      maxRetries: 3,
-    });
-
-    return res.json({ signature: sig });
-  } catch (e) {
-    console.error("SWAP ERROR:", e);
-    return res.status(500).json({ error: e.message });
-  }
 });
 
+
+// Exporta a rota
 module.exports = router;
