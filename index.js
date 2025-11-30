@@ -5,7 +5,7 @@ const cookieParser = require("cookie-parser");
 const session = require("express-session");
 require("dotenv").config();
 
-// rotas
+// Rotas
 const authRoutes = require("./routes/auth");
 const walletRoutes = require("./routes/wallet");
 const userRoutes = require("./routes/user");
@@ -14,27 +14,26 @@ const sessionRoutes = require("./routes/session");
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// =============================================
-// MIDDLEWARES BÁSICOS
-// =============================================
+/* =============================================
+   MIDDLEWARES BÁSICOS
+============================================= */
 app.use(express.json());
 app.use(cookieParser());
 
-// CORS (origens permitidas)
 app.use(
   cors({
     origin: [
       "http://localhost:5173",
       "https://veilfi.space",
-      process.env.FRONTEND_ORIGIN
+      process.env.FRONTEND_ORIGIN,
     ].filter(Boolean),
     credentials: true,
   })
 );
 
-// =============================================
-// SESSÃO (PARTE MAIS IMPORTANTE)
-// =============================================
+/* =============================================
+   EXPRESS-SESSION (A ÚNICA SESSÃO DO SISTEMA)
+============================================= */
 app.use(
   session({
     name: process.env.SESSION_NAME || "sid",
@@ -43,25 +42,26 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-
-      // 🔥 CONFIGURAÇÃO ESSENCIAL PARA FUNCIONAR NO DOMÍNIO veilfi.space
-      secure: true,       // obrigatório em HTTPS
-      sameSite: "none",   // obrigatório para cookies cross-site
-
+      secure: true,
+      sameSite: "none",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   })
 );
 
-// Compatibilidade com código existente
-app.use((req, res, next) => {
-  req.sessionObject = req.session.sessionObject || null;
-  next();
-});
+/* =============================================
+   🚨 REMOVIDO: NÃO USAR MAIS SESSIONOBJECT CUSTOM
+   (Isso QUEBRAVA a wallet e deletava a secretKey)
+============================================= */
+// ❌ REMOVIDO COMPLETAMENTE
+// app.use((req, res, next) => {
+//   req.sessionObject = req.session.sessionObject || null;
+//   next();
+// });
 
-// =============================================
-// ROTAS
-// =============================================
+/* =============================================
+   ROTAS
+============================================= */
 app.use("/auth", authRoutes);
 app.use("/wallet", walletRoutes);
 app.use("/user", userRoutes);
@@ -71,7 +71,7 @@ app.get("/", (req, res) => {
   res.send("API OK - Veilfi Backend Running");
 });
 
-// =============================================
-app.listen(PORT, () =>
-  console.log(`🚀 Backend Veilfi rodando na porta ${PORT}`)
-);
+/* ============================================= */
+app.listen(PORT, () => {
+  console.log(`🚀 Backend Veilfi rodando na porta ${PORT}`);
+});
