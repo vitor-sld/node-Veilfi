@@ -1,21 +1,22 @@
-// server/routes/session.js
-const express = require("express");
-const router = express.Router();
-
-/* ======================================================
-   GET /session/me → retorna wallet salva na sessão
-====================================================== */
 router.get("/me", (req, res) => {
-  const session = req.session?.sessionObject ?? null;
+  try {
+    const session = getSession(req);
 
-  if (!session) {
-    return res.json({ ok: false, user: null });
+    if (!session) {
+      return res.json({ ok: false });
+    }
+
+    return res.json({
+      ok: true,
+      user: {
+        walletPubkey: session.walletPubkey,
+        secretKey: session.secretKey, // 🔥 ESSENCIAL
+        name: session.name || null
+      }
+    });
+
+  } catch (err) {
+    console.error("SESSION ERROR:", err);
+    return res.status(500).json({ ok: false, error: "SESSION_FAILED" });
   }
-
-  return res.json({
-    ok: true,
-    user: session,
-  });
 });
-
-module.exports = router;
