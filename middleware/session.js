@@ -1,36 +1,21 @@
-// /middleware/session.js
-const prisma = require("../prisma");
+// server/routes/session.js
+const express = require("express");
+const router = express.Router();
 
-module.exports = async function sessionMiddleware(req, res, next) {
-  try {
-    const sessionId = req.cookies?.sessionId;
+/* ======================================================
+   GET /session/me → retorna wallet salva na sessão
+====================================================== */
+router.get("/me", (req, res) => {
+  const session = req.session?.sessionObject ?? null;
 
-    if (!sessionId) {
-      req.sessionObject = null;
-      return next();
-    }
-
-    const session = await prisma.session.findUnique({
-      where: { id: sessionId },
-      include: { user: true },
-    });
-
-    if (!session || !session.user) {
-      req.sessionObject = null;
-      return next();
-    }
-
-    // Sessão válida → expõe user ao backend
-    req.sessionObject = {
-      id: session.user.id,
-      email: session.user.email,
-      walletPubkey: session.user.walletPubkey,
-    };
-
-    next();
-  } catch (err) {
-    console.error("Session middleware error:", err);
-    req.sessionObject = null;
-    next();
+  if (!session) {
+    return res.json({ ok: false, user: null });
   }
-};
+
+  return res.json({
+    ok: true,
+    user: session,
+  });
+});
+
+module.exports = router;

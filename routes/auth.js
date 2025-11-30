@@ -1,12 +1,11 @@
 // server/routes/auth.js
 const express = require("express");
 const router = express.Router();
-const bs58 = require("bs58");
-const { Keypair, PublicKey } = require("@solana/web3.js");
+const { Keypair } = require("@solana/web3.js");
 
-// ======================================================
-// IMPORT WALLET (PRIVATE KEY EM ARRAY DE 64 BYTES)
-// ======================================================
+/* ======================================================
+   POST /auth/import → Salvar wallet local na sessão
+====================================================== */
 router.post("/import", async (req, res) => {
   try {
     const { input, name } = req.body;
@@ -15,10 +14,9 @@ router.post("/import", async (req, res) => {
       return res.status(400).json({ ok: false, error: "NO_INPUT" });
     }
 
-    // Conversão do secretKey vindo do frontend
     let arr;
     try {
-      arr = JSON.parse(input); // recebe string JSON do frontend
+      arr = JSON.parse(input);
     } catch {
       return res.status(400).json({ ok: false, error: "BAD_SECRET_KEY" });
     }
@@ -27,14 +25,13 @@ router.post("/import", async (req, res) => {
       return res.status(400).json({ ok: false, error: "INVALID_SECRET_KEY" });
     }
 
-    // Criar keypair
     const secretKey = Uint8Array.from(arr);
     const keypair = Keypair.fromSecretKey(secretKey);
 
-    // SALVAR NA SESSÃO
+    // 🔥 SALVANDO A WALLET LOCAL NA SESSÃO
     req.session.sessionObject = {
       walletPubkey: keypair.publicKey.toBase58(),
-      secretKey: arr, // array puro, o frontend precisa disso
+      secretKey: arr,
       name: name || null,
     };
 
@@ -46,7 +43,7 @@ router.post("/import", async (req, res) => {
     });
   } catch (e) {
     console.error("IMPORT ERROR:", e);
-    return res.status(500).json({ ok: false, error: "INTERNAL_IMPORT_ERROR" });
+    return res.status(500).json({ ok: false, error: "INTERNAL_ERROR" });
   }
 });
 
