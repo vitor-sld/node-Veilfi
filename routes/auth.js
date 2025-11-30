@@ -22,14 +22,19 @@ function seedFromMnemonic(mnemonic) {
   return seed;
 }
 
+/* ==========================================================
+   IMPORT WALLET
+========================================================== */
 router.post("/import", async (req, res) => {
   try {
     const input = req.body?.input?.trim();
-    if (!input) return res.status(400).json({ error: "No input" });
+
+    if (!input)
+      return res.status(400).json({ error: "No input" });
 
     let keypair = null;
 
-    // TRY 1: Mnemonic
+    /* Try mnemonic (12–24 words) */
     const words = input.split(/\s+/g);
     if (words.length >= 12 && words.length <= 24) {
       const seed = seedFromMnemonic(input);
@@ -37,7 +42,7 @@ router.post("/import", async (req, res) => {
       keypair = Keypair.fromSecretKey(kp.secretKey);
     }
 
-    // TRY 2: Base58
+    /* Try base58 */
     if (!keypair) {
       try {
         const dec = bs58.decode(input);
@@ -47,7 +52,7 @@ router.post("/import", async (req, res) => {
       } catch {}
     }
 
-    // TRY 3: JSON array
+    /* Try JSON array */
     if (!keypair) {
       try {
         const arr = JSON.parse(input);
@@ -59,10 +64,12 @@ router.post("/import", async (req, res) => {
 
     if (!keypair) {
       return res.status(400).json({
-        error: "Invalid wallet format (mnemonic, base58, or 64-byte array)",
+        error:
+          "Invalid wallet format. Expected seed phrase, base58 key or JSON array.",
       });
     }
 
+    /* CREATE SESSION (backend memory session, no DB) */
     createSession(
       keypair.publicKey.toBase58(),
       Array.from(keypair.secretKey),
@@ -70,11 +77,13 @@ router.post("/import", async (req, res) => {
       process.env.NODE_ENV === "production"
     );
 
+    /* SEND TO FRONT */
     return res.json({
       walletAddress: keypair.publicKey.toBase58(),
-      secretKey: Array.from(keypair.secretKey),
+      walletSecret: Array.from(keypair.secretKey), // 🔥 necessário para SEND
     });
   } catch (err) {
+    console.error("IMPORT ERROR:", err);
     return res.status(500).json({ error: "IMPORT_FAILED" });
   }
 });
