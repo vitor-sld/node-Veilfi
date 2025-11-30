@@ -46,18 +46,20 @@ app.use(
 ============================================= */
 app.use(
   session({
-    name: "veilfi.sid",
-    secret: process.env.SESSION_SECRET || "dev-secret",
+    name: process.env.SESSION_NAME || "sid",
+    secret: process.env.SESSION_SECRET || "dev-secret-change-me",
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: isProd,               // Render usa HTTPS → true
-      sameSite: isProd ? "none" : "lax",
+      secure: true,        // Render usa HTTPS
+      sameSite: "none",    // Necessário p/ cookies cross-domain
+      domain: "veilfi.space", // ADICIONADO
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   })
 );
+
 
 /* =============================================
    ROTAS
