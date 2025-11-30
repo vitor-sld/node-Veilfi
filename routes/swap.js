@@ -21,28 +21,23 @@ const {
     transfer,
 } = require("@solana/spl-token");
 
-
 // ================================
 //   CONFIGURAÇÕES DO SISTEMA
 // ================================
 
-// RPC – pode usar o do seu servidor, Alchemy, Helius, Triton etc.
 const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
 
-// Chaves da plataforma (Tesouro)
 const plataformaPublicKey = new PublicKey(process.env.carteira_publica);
 const plataformaPrivateKey = Uint8Array.from(JSON.parse(process.env.carteira_privada));
 const plataformaKeypair = Keypair.fromSecretKey(plataformaPrivateKey);
 
-// Mint do token do cliente (PAMP)
 const mintPump = new PublicKey(process.env.moedaCliente);
-
 
 // ==========================================
 //         ENDPOINT DO SWAP
 // ==========================================
-router.post("/swap", async (req, res) => {
 
+router.post("/buy", async (req, res) => {
     try {
         const { carteiraUsuarioPublica, carteiraUsuarioPrivada, amountSOL } = req.body;
 
@@ -51,20 +46,21 @@ router.post("/swap", async (req, res) => {
         }
 
         const quantidadeSol = parseFloat(amountSOL);
-
         if (quantidadeSol <= 0) {
             return res.status(400).json({ error: "Valor inválido." });
         }
 
-        // Chave do usuário
+        // ===========================
+        //   CARTEIRA DO USUÁRIO
+        // ===========================
         const usuarioPublicKey = new PublicKey(carteiraUsuarioPublica);
         const usuarioPrivateKey = Uint8Array.from(JSON.parse(carteiraUsuarioPrivada));
         const usuarioKeypair = Keypair.fromSecretKey(usuarioPrivateKey);
 
+        // ===========================================================
+        //  1️⃣ ENVIAR SOL DO USUÁRIO → TESOURO
+        // ===========================================================
 
-        // ===========================================================
-        //  1️⃣   DEBITAR SOL DO USUÁRIO → envio para o tesouro
-        // ===========================================================
         const transferirSolTx = new Transaction().add(
             SystemProgram.transfer({
                 fromPubkey: usuarioPublicKey,
@@ -79,21 +75,17 @@ router.post("/swap", async (req, res) => {
             [usuarioKeypair]
         );
 
-
         // ===========================================================
-        //  2️⃣   CALCULAR QUANTO PUMP O USUÁRIO RECEBE
+        //  2️⃣ CALCULAR TOKEN PUMP
         // ===========================================================
-        // taxa de conversão (coloque a sua)
-        const TAXA = 1000; // Exemplo: 1 SOL = 1000 PUMP
 
+        const TAXA = 1000; // 1 SOL = 1000 PUMP (ajuste se quiser)
         const quantidadePump = quantidadeSol * TAXA;
 
-
         // ===========================================================
-        //  3️⃣   ENVIAR PUMP PARA O USUÁRIO
+        //  3️⃣ ENVIAR PUMP PARA O USUÁRIO
         // ===========================================================
 
-        // Conta de token PUMP do tesouro
         const ataTesouro = await getOrCreateAssociatedTokenAccount(
             connection,
             plataformaKeypair,
@@ -101,7 +93,6 @@ router.post("/swap", async (req, res) => {
             plataformaPublicKey
         );
 
-        // Conta de token PUMP do usuário
         const ataUsuario = await getOrCreateAssociatedTokenAccount(
             connection,
             plataformaKeypair,
@@ -118,10 +109,10 @@ router.post("/swap", async (req, res) => {
             quantidadePump
         );
 
+        // ===========================================================
+        //  FINALIZAÇÃO
+        // ===========================================================
 
-        // ===========================================================
-        //        FINALIZAÇÃO
-        // ===========================================================
         return res.json({
             sucesso: true,
             mensagem: "Swap realizado com sucesso!",
@@ -131,13 +122,10 @@ router.post("/swap", async (req, res) => {
             assinatura_envioPUMP: assinaturaPump,
         });
 
-
     } catch (err) {
         console.error("Erro no swap:", err);
         return res.status(500).json({ error: "Erro ao realizar o swap." });
     }
 });
 
-
-// Exporta a rota
 module.exports = router;
