@@ -40,6 +40,11 @@ app.use(
 );
 
 /* =============================================
+   TRUST PROXY — OBRIGATÓRIO NA RENDER
+============================================= */
+app.set("trust proxy", 1);
+
+/* =============================================
    SESSION
 ============================================= */
 app.use(
@@ -50,8 +55,8 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: true,
-      sameSite: "none",
+      secure: true,      // cookies só funcionam em HTTPS
+      sameSite: "none",  // necessário para frontend em outro domínio
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   })
@@ -61,7 +66,7 @@ app.use(
    ROTAS
 ============================================= */
 app.use("/auth", authRoutes);
-app.use("/wallet", walletRoutes);   // <--- AQUI ESTÁ A ROTA /wallet/send
+app.use("/wallet", walletRoutes);
 app.use("/user", userRoutes);
 app.use("/session", sessionRoutes);
 
