@@ -10,6 +10,7 @@ const authRoutes = require("./routes/auth");
 const walletRoutes = require("./routes/wallet");
 const userRoutes = require("./routes/user");
 const sessionRoutes = require("./routes/session");
+const swapRoutes = require("./routes/swap");   //  👈 ADICIONADO
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -40,7 +41,7 @@ app.use(
 );
 
 /* =============================================
-   TRUST PROXY — OBRIGATÓRIO NA RENDER
+   TRUST PROXY — NECESSÁRIO NA RENDER
 ============================================= */
 app.set("trust proxy", 1);
 
@@ -55,8 +56,8 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: true,      // cookies só funcionam em HTTPS
-      sameSite: "none",  // necessário para frontend em outro domínio
+      secure: true,      // precisa ser https
+      sameSite: "none",  // permite cookies cross-domain
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   })
@@ -69,6 +70,7 @@ app.use("/auth", authRoutes);
 app.use("/wallet", walletRoutes);
 app.use("/user", userRoutes);
 app.use("/session", sessionRoutes);
+app.use("/swap", swapRoutes);  //  👈 AQUI A MAGIA DO SWAP
 
 app.get("/", (req, res) => {
   res.send("API OK - Veilfi Backend Running");
