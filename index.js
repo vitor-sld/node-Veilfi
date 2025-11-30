@@ -14,7 +14,6 @@ const sessionRoutes = require("./routes/session");
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Detecta se está em produção (Render)
 const isProd = process.env.NODE_ENV === "production";
 
 /* =============================================
@@ -37,10 +36,8 @@ app.use(
   })
 );
 
-
-
 /* =============================================
-   EXPRESS-SESSION (CORRIGIDO 100%)
+   EXPRESS-SESSION
 ============================================= */
 app.use(
   session({
@@ -50,12 +47,20 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: true,       // <---- obrigatório no Render (HTTPS)
-      sameSite: "none",   // <---- obrigatório para cookies cross-domain
+      secure: true,
+      sameSite: "none",
       maxAge: 7 * 24 * 60 * 60 * 1000,
     },
   })
 );
+
+/* =============================================
+   req.sessionObject (compat)
+============================================= */
+app.use((req, res, next) => {
+  req.sessionObject = req.session.sessionObject || null;
+  next();
+});
 
 /* =============================================
    ROTAS
