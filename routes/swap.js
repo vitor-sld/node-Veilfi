@@ -117,7 +117,7 @@ router.post("/usdt", async (req, res) => {
 
     if (!quoteJson.outAmount) {
       return res.status(500).json({
-        error: "Raydium não retornou cotação.",
+        error: "Em Breve",
         details: quoteJson,
       });
     }
@@ -142,7 +142,7 @@ router.post("/usdt", async (req, res) => {
 
     if (!swapJson.swapTransaction) {
       return res.status(500).json({
-        error: "Raydium não retornou transação de swap.",
+        error: "Em breve.",
         details: swapJson,
       });
     }
