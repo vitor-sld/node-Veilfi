@@ -16,7 +16,7 @@ const {
   createTransferInstruction,
 } = require("@solana/spl-token");
 
-// === RPC MAINNET ===
+// RPC MAINNET
 const RPC_URL =
   process.env.RPC_URL ||
   "https://mainnet.helius-rpc.com/?api-key=1581ae46-832d-4d46-bc0c-007c6269d2d9";
@@ -25,9 +25,7 @@ const connection = new Connection(RPC_URL, {
   commitment: "confirmed",
 });
 
-// =======================================================
 // MINTS
-// =======================================================
 const USDC_MINT = new PublicKey(
   "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 );
@@ -36,9 +34,7 @@ const VEIL_MINT = new PublicKey(
   "VSKXrgwu5mtbdSZS7Au81p1RgLQupWwYXX1L2cWpump"
 );
 
-// =======================================================
-// Converter a secretKey enviada
-// =======================================================
+// Convert secretKey
 function keypairFromSecretKey(pk) {
   if (Array.isArray(pk)) {
     return Keypair.fromSecretKey(Uint8Array.from(pk));
@@ -58,9 +54,7 @@ function keypairFromSecretKey(pk) {
   }
 }
 
-// =======================================================
-// SEND: SOL or USDC or VEIL
-// =======================================================
+// SEND ROUTE
 router.post("/send", async (req, res) => {
   try {
     let { secretKey, recipient, amount, token } = req.body;
@@ -78,11 +72,9 @@ router.post("/send", async (req, res) => {
     const senderPublicKey = sender.publicKey;
     const recipientPubkey = new PublicKey(recipient);
 
-    // ====================================================
-    // 1. SOL TRANSFER
-    // ====================================================
+    // 1 — SEND SOL
     if (token === "SOL") {
-      const lamports = Math.floor(amount * 1e9); // 9 decimals
+      const lamports = Math.floor(amount * 1e9);
 
       const tx = new Transaction().add(
         SystemProgram.transfer({
@@ -99,33 +91,25 @@ router.post("/send", async (req, res) => {
         connection,
         tx,
         [sender],
-        {
-          skipPreflight: false,
-          commitment: "confirmed",
-        }
+        { skipPreflight: false, commitment: "confirmed" }
       );
 
       return res.json({ signature });
     }
 
-    // ====================================================
-    // 2. SPL TOKENS (USDC / VEIL)
-    // ====================================================
-
-    let mint;
-    let decimals;
+    // 2 — SEND SPL (USDC / VEIL)
+    let mint, decimals;
 
     if (token === "USDC") {
       mint = USDC_MINT;
       decimals = 6;
     } else if (token === "VEIL") {
       mint = VEIL_MINT;
-      decimals = 6; // ajuste para o decimal real do token VEIL
+      decimals = 6;
     } else {
       return res.status(400).json({ error: "Invalid token" });
     }
 
-    // ATA do sender / recipient
     const fromATA = await getOrCreateAssociatedTokenAccount(
       connection,
       sender,
@@ -140,15 +124,13 @@ router.post("/send", async (req, res) => {
       recipientPubkey
     );
 
-    // Converter amount para formato SPL
     const rawAmount = Math.floor(amount * 10 ** decimals);
 
     const ix = createTransferInstruction(
       fromATA.address,
       toATA.address,
       senderPublicKey,
-      rawAmount,
-      [],
+      rawAmount
     );
 
     const tx = new Transaction().add(ix);
@@ -164,7 +146,6 @@ router.post("/send", async (req, res) => {
     );
 
     return res.json({ signature });
-
   } catch (err) {
     console.error("SEND ERROR:", err);
     return res.status(500).json({ error: err.message });
