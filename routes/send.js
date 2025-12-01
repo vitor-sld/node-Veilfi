@@ -12,7 +12,7 @@ const {
 } = require("@solana/web3.js");
 
 const {
-  getOrCreateAssociatedTokenAccount,
+  getOrCreateAssociatedTokenAccount, 
   createTransferInstruction,
 } = require("@solana/spl-token");
 
@@ -59,9 +59,14 @@ router.post("/send", async (req, res) => {
   try {
     let { secretKey, recipient, amount, token } = req.body;
 
+    console.log("TOKEN RECEIVED →", token);
+
     if (!secretKey || !recipient || !amount || !token) {
       return res.status(400).json({ error: "Missing fields" });
     }
+
+    // 🔥 NORMALIZA TOKEN (corrige SOL/usdc/Usdc/VEIL/etc)
+    const tokenNorm = String(token).trim().toUpperCase();
 
     amount = Number(amount);
     if (isNaN(amount) || amount <= 0) {
@@ -73,7 +78,7 @@ router.post("/send", async (req, res) => {
     const recipientPubkey = new PublicKey(recipient);
 
     // 1 — SEND SOL
-    if (token === "SOL") {
+    if (tokenNorm === "SOL") {
       const lamports = Math.floor(amount * 1e9);
 
       const tx = new Transaction().add(
@@ -100,10 +105,10 @@ router.post("/send", async (req, res) => {
     // 2 — SEND SPL (USDC / VEIL)
     let mint, decimals;
 
-    if (token === "USDC") {
+    if (tokenNorm === "USDC") {
       mint = USDC_MINT;
       decimals = 6;
-    } else if (token === "VEIL") {
+    } else if (tokenNorm === "VEIL") {
       mint = VEIL_MINT;
       decimals = 6;
     } else {
@@ -146,6 +151,7 @@ router.post("/send", async (req, res) => {
     );
 
     return res.json({ signature });
+
   } catch (err) {
     console.error("SEND ERROR:", err);
     return res.status(500).json({ error: err.message });
