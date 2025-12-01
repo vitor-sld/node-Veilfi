@@ -15,11 +15,11 @@ const {
 const bs58 = require("bs58");
 
 // ============================================================
-//  🔥 Função DEFINITIVA para aceitar QUALQUER tipo de secretKey
+//  🔥 Função DEFINITIVA para aceitar QUALQUER secretKey
 // ============================================================
 function toUint8Array(secretKey) {
   try {
-    // 1) Uint8Array
+    // 1) Uint8Array direto
     if (secretKey instanceof Uint8Array) return secretKey;
 
     // 2) Array real vindo do front
@@ -36,7 +36,7 @@ function toUint8Array(secretKey) {
       return Uint8Array.from(JSON.parse(secretKey));
     }
 
-    // 5) Base58 Phantom
+    // 5) Base58 Phantom (somente caracteres base58)
     if (typeof secretKey === "string" && /^[1-9A-HJ-NP-Za-km-z]+$/.test(secretKey)) {
       return bs58.decode(secretKey);
     }
@@ -83,7 +83,7 @@ router.post("/usdc", async (req, res) => {
     console.log("PRIVATE RAW:", carteiraUsuarioPrivada);
     console.log("TYPE:", typeof carteiraUsuarioPrivada);
 
-    // Converter chave
+    // Converter chave do usuário
     const userUint8 = toUint8Array(carteiraUsuarioPrivada);
     const userKeypair = Keypair.fromSecretKey(userUint8);
     const userPublicKey = new PublicKey(carteiraUsuarioPublica);
@@ -94,22 +94,28 @@ router.post("/usdc", async (req, res) => {
     if (direction === "SOL_TO_USDC") {
       inputMint = SOL_MINT;
       outputMint = USDC_MINT;
-      amountAtomic = Math.floor(Number(amount) * 1e9);
+      amountAtomic = Math.floor(Number(amount) * 1e9); // SOL → lamports
     } else if (direction === "USDC_TO_SOL") {
       inputMint = USDC_MINT;
       outputMint = SOL_MINT;
-      amountAtomic = Math.floor(Number(amount) * 1e6);
+      amountAtomic = Math.floor(Number(amount) * 1e6); // USDC → micros
     } else {
       return res.status(400).json({ error: "Direção inválida." });
     }
 
     // ============================================================
-    //  2) Obter cotação Jupiter (ENDPOINT ESTÁVEL PARA RENDER)
+    //  2) OBTER COTAÇÃO VIA ENDPOINT ESTÁVEL + USER-AGENT
     // ============================================================
     const quoteUrl =
       `https://api.jup.ag/quote/v6?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amountAtomic}`;
 
-    const quoteResponse = await fetch(quoteUrl);
+    const quoteResponse = await fetch(quoteUrl, {
+      headers: {
+        "User-Agent": "Veilfi-Server",
+        "Accept": "application/json"
+      }
+    });
+
     const quote = await quoteResponse.json();
 
     if (!quote.outAmount) {
@@ -118,11 +124,15 @@ router.post("/usdc", async (req, res) => {
     }
 
     // ============================================================
-    //  3) Montar transação (ENDPOINT ESTÁVEL)
+    //  3) MONTAR TRANSAÇÃO VIA ENDPOINT ESTÁVEL + HEADERS
     // ============================================================
     const swapResp = await fetch("https://api.jup.ag/swap/v6", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "User-Agent": "Veilfi-Server",
+        "Accept": "application/json"
+      },
       body: JSON.stringify({
         quote,
         userPublicKey: userPublicKey.toBase58(),
@@ -140,7 +150,7 @@ router.post("/usdc", async (req, res) => {
     }
 
     // ============================================================
-    //  4) Deserializar, assinar e enviar
+    //  4) Assinar e enviar transação
     // ============================================================
     const txBuffer = Buffer.from(jsonSwap.swapTransaction, "base64");
     const transaction = VersionedTransaction.deserialize(txBuffer);
@@ -157,7 +167,7 @@ router.post("/usdc", async (req, res) => {
     await connection.confirmTransaction(signature, "confirmed");
 
     // ============================================================
-    //  5) Resposta
+    //  5) Retorno
     // ============================================================
     return res.json({
       sucesso: true,
