@@ -117,7 +117,7 @@ router.post("/usdt", async (req, res) => {
 
     if (!quoteJson.outAmount) {
       return res.status(500).json({
-        error: "Em Breve",
+        error: "Coming Soon",
         details: quoteJson,
       });
     }
@@ -142,7 +142,7 @@ router.post("/usdt", async (req, res) => {
 
     if (!swapJson.swapTransaction) {
       return res.status(500).json({
-        error: "Em breve.",
+        error: "Coming Soon.",
         details: swapJson,
       });
     }
