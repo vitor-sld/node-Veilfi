@@ -1,10 +1,10 @@
-// ==========================================================
-//   swap.js — Universal Swap (Jupiter Aggregator API)
-// ==========================================================
+// swap.js – Jupiter v6 – SOL <-> USDC
+// -------------------------------------
 
-require("dotenv").config();
 const express = require("express");
 const router = express.Router();
+const fetch = require("node-fetch");
+const bs58 = require("bs58");
 const {
   Connection,
   PublicKey,
@@ -12,146 +12,188 @@ const {
   VersionedTransaction,
 } = require("@solana/web3.js");
 
-const bs58 = require("bs58");
-const fetch = require("node-fetch");
+// -------------------------------------
+// RPC (mainnet)
+// -------------------------------------
+const RPC_URL =
+  process.env.RPC_URL ||
+  "https://mainnet.helius-rpc.com/?api-key=1581ae46-832d-4d46-bc0c-007c6269d2d9";
 
-// ==========================================================
-// Convert private key (base58 or JSON array)
-// ==========================================================
-function toUint8Array(secretKey) {
-  try {
-    if (!secretKey) throw new Error("SecretKey vazia.");
+const connection = new Connection(RPC_URL, "confirmed");
 
-    if (typeof secretKey === "string" && !secretKey.startsWith("[")) {
-      return bs58.decode(secretKey); // base58
-    }
+// -------------------------------------
+// Jupiter endpoints (NÃO USAR mais quote-api.jup.ag)
+// -------------------------------------
+const JUP_QUOTE_URL = "https://api.jup.ag/quote";
+const JUP_SWAP_URL = "https://api.jup.ag/swap";
 
-    if (typeof secretKey === "string" && secretKey.startsWith("[")) {
-      return Uint8Array.from(JSON.parse(secretKey)); // JSON array
-    }
+// -------------------------------------
+// Supported Tokens
+// -------------------------------------
+const SOL_MINT = "So11111111111111111111111111111111111111112"; // Wrapped SOL
+const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 
-    if (Array.isArray(secretKey)) return Uint8Array.from(secretKey);
+// -------------------------------------
+// Key Conversion (base58 or array)
+// -------------------------------------
+function parseSecretKey(secretKey) {
+  if (!secretKey) throw new Error("Missing secretKey.");
 
-    throw new Error("Formato desconhecido de secretKey.");
-  } catch (err) {
-    console.error("Erro convertendo chave:", err);
-    throw new Error("Chave privada inválida.");
+  // If array
+  if (Array.isArray(secretKey)) {
+    return Keypair.fromSecretKey(Uint8Array.from(secretKey));
   }
+
+  // JSON array
+  if (typeof secretKey === "string" && secretKey.trim().startsWith("[")) {
+    const arr = JSON.parse(secretKey);
+    return Keypair.fromSecretKey(Uint8Array.from(arr));
+  }
+
+  // Base58
+  return Keypair.fromSecretKey(bs58.decode(secretKey));
 }
 
-// ==========================================================
-// RPC
-// ==========================================================
-const connection = new Connection(
-  "https://api.mainnet-beta.solana.com",
-  "confirmed"
-);
+// -------------------------------------
+// Transform direction & calculate decimals
+// -------------------------------------
+function getDirection(dir) {
+  const d = (dir || "").toUpperCase();
+  if (d === "SOL_TO_USDC") return "SOL_TO_USDC";
+  if (d === "USDC_TO_SOL") return "USDC_TO_SOL";
+  throw new Error("Invalid direction. Use SOL_TO_USDC or USDC_TO_SOL");
+}
 
-// ==========================================================
-//  UNIVERSAL SWAP VIA JUPITER
-// ==========================================================
+function toAtomicAmount(amount, mint) {
+  amount = Number(amount);
+  if (isNaN(amount) || amount <= 0) throw new Error("Invalid amount.");
+
+  if (mint === SOL_MINT) return Math.floor(amount * 1e9);
+  return Math.floor(amount * 1e6); // USDC decimals
+}
+
+// -------------------------------------
+// MAIN ENDPOINT – Jupiter Swap
+// -------------------------------------
 router.post("/jupiter", async (req, res) => {
   try {
-    console.log("=== JUPITER SWAP REQUEST ===");
-
     const {
       carteiraUsuarioPublica,
       carteiraUsuarioPrivada,
       amount,
-      inputMint,
-      outputMint,
+      direction,
     } = req.body;
 
-    if (!carteiraUsuarioPublica || !carteiraUsuarioPrivada || !amount) {
-      return res.status(400).json({ error: "Dados incompletos." });
+    if (!carteiraUsuarioPublica || !carteiraUsuarioPrivada || !amount || !direction) {
+      return res.status(400).json({ error: "Missing required fields." });
     }
 
-    const userPubkey = new PublicKey(carteiraUsuarioPublica.trim());
-    const privateKeyArray = toUint8Array(carteiraUsuarioPrivada);
-    const userKeypair = Keypair.fromSecretKey(privateKeyArray);
+    // Validate wallet
+    let userPubkey;
+    try {
+      userPubkey = new PublicKey(carteiraUsuarioPublica);
+    } catch {
+      return res.status(400).json({ error: "Invalid public wallet address." });
+    }
 
-    console.log("Input Mint:", inputMint);
-    console.log("Output Mint:", outputMint);
-    console.log("Amount:", amount);
+    // private key
+    let userKeypair;
+    try {
+      userKeypair = parseSecretKey(carteiraUsuarioPrivada);
+    } catch (err) {
+      return res.status(400).json({ error: "Invalid secretKey: " + err.message });
+    }
 
-    // ==========================================================
-    // 1 — GET QUOTE (Jupiter API)
-    // ==========================================================
+    // Direction
+    const dir = getDirection(direction);
+
+    let inputMint, outputMint;
+    if (dir === "SOL_TO_USDC") {
+      inputMint = SOL_MINT;
+      outputMint = USDC_MINT;
+    } else {
+      inputMint = USDC_MINT;
+      outputMint = SOL_MINT;
+    }
+
+    const amountAtomic = toAtomicAmount(amount, inputMint);
+
+    // -------------------------------------
+    // 1) Jupiter Quote
+    // -------------------------------------
     const quoteUrl =
-      `https://quote-api.jup.ag/v6/quote?` +
-      `inputMint=${inputMint}&` +
-      `outputMint=${outputMint}&` +
-      `amount=${amount}&` +
-      `slippageBps=50`; // 0.5%
+      `${JUP_QUOTE_URL}?inputMint=${inputMint}` +
+      `&outputMint=${outputMint}&amount=${amountAtomic}&slippageBps=50`;
 
-    console.log("QUOTE URL:", quoteUrl);
+    console.log("=== JUPITER QUOTE URL ===");
+    console.log(quoteUrl);
 
-    const quoteResponse = await fetch(quoteUrl);
-    const quote = await quoteResponse.json();
-
-    console.log("JUPITER QUOTE RAW:", quote);
-
-    if (!quote || !quote.routePlan) {
-      return res.status(500).json({
-        error: "Jupiter não retornou rota válida.",
-        details: quote,
-      });
+    const quoteResp = await fetch(quoteUrl);
+    if (!quoteResp.ok) {
+      const txt = await quoteResp.text();
+      return res.status(502).json({ error: "Failed to fetch quote.", body: txt });
     }
 
-    // ==========================================================
-    // 2 — GET SWAP TRANSACTION
-    // ==========================================================
-    const swapResponse = await fetch(
-      "https://quote-api.jup.ag/v6/swap-instructions",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          quoteResponse: quote,
-          userPublicKey: userPubkey.toBase58(),
-          wrapAndUnwrapSol: true,
-        }),
-      }
-    );
+    const quoteJson = await quoteResp.json();
 
-    const swapJson = await swapResponse.json();
+    // validar rota
+    if (
+      (!quoteJson.routePlan || quoteJson.routePlan.length === 0) &&
+      (!quoteJson.data || quoteJson.data.length === 0) &&
+      (!quoteJson.routes || quoteJson.routes.length === 0)
+    ) {
+      return res.status(500).json({ error: "No liquidity route found.", quoteJson });
+    }
 
-    console.log("SWAP INSTRUCTIONS RAW:", swapJson);
+    // -------------------------------------
+    // 2) Build swap transaction
+    // -------------------------------------
+    const swapResp = await fetch(JUP_SWAP_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        quoteResponse: quoteJson,
+        userPublicKey: userPubkey.toBase58(),
+        wrapAndUnwrapSol: true,
+      }),
+    });
+
+    if (!swapResp.ok) {
+      const txt = await swapResp.text();
+      return res.status(502).json({ error: "Failed to build swap transaction.", body: txt });
+    }
+
+    const swapJson = await swapResp.json();
 
     if (!swapJson.swapTransaction) {
-      return res.status(500).json({
-        error: "Jupiter não retornou transação de swap.",
-        details: swapJson,
-      });
+      return res.status(500).json({ error: "Jupiter did not return swapTransaction.", details: swapJson });
     }
 
-    // ==========================================================
-    // 3 — ASSINAR & ENVIAR TRANSAÇÃO
-    // ==========================================================
-    const swapTxBuf = Buffer.from(swapJson.swapTransaction, "base64");
-    const transaction = VersionedTransaction.deserialize(swapTxBuf);
+    // -------------------------------------
+    // 3) Deserialize + sign
+    // -------------------------------------
+    const txBuffer = Buffer.from(swapJson.swapTransaction, "base64");
+    const tx = VersionedTransaction.deserialize(txBuffer);
 
-    transaction.sign([userKeypair]);
+    tx.sign([userKeypair]);
 
-    const signature = await connection.sendRawTransaction(
-      transaction.serialize()
-    );
-
-    console.log("Tx Signature:", signature);
+    // -------------------------------------
+    // 4) Send to blockchain
+    // -------------------------------------
+    const signature = await connection.sendRawTransaction(tx.serialize(), {
+      skipPreflight: false,
+    });
 
     await connection.confirmTransaction(signature, "confirmed");
 
-    // ==========================================================
-    // 4 — SUCESSO
-    // ==========================================================
     return res.json({
-      sucesso: true,
-      assinatura: signature,
-      quote: quote.outAmount,
+      success: true,
+      signature,
+      received: quoteJson.outAmount || null,
     });
 
   } catch (err) {
-    console.error("ERRO NO JUPITER SWAP:", err);
+    console.error("JUPITER SWAP ERROR:", err);
     return res.status(500).json({
       error: "Erro ao executar swap.",
       details: err.message,
@@ -159,4 +201,5 @@ router.post("/jupiter", async (req, res) => {
   }
 });
 
+// -------------------------------------
 module.exports = router;
