@@ -1,92 +1,151 @@
-// routes/wallet.js
 const express = require("express");
 const router = express.Router();
 const bs58 = require("bs58");
+
 const {
   Connection,
   Keypair,
+  PublicKey,
   SystemProgram,
   Transaction,
   sendAndConfirmTransaction,
-  PublicKey,
-  LAMPORTS_PER_SOL,
-  clusterApiUrl,
-  sendAndConfirmRawTransaction,
 } = require("@solana/web3.js");
 
-const connection = new Connection(clusterApiUrl("mainnet-beta"), "confirmed"); // ou 'mainnet-beta' ou devnet
+const {
+  getOrCreateAssociatedTokenAccount,
+  createTransferInstruction,
+} = require("@solana/spl-token");
 
-// helper: converte secretKey (array/string/base58) para Keypair
+// RPC
+const RPC_URL =
+  process.env.RPC_URL ||
+  "https://mainnet.helius-rpc.com/?api-key=1581ae46-832d-4d46-bc0c-007c6269d2d9";
+
+const connection = new Connection(RPC_URL, { commitment: "confirmed" });
+
+// MINTS
+const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+
+// parse secret key
 function keypairFromSecretKey(pk) {
-  if (!pk) throw new Error("No secret key provided");
-  if (Array.isArray(pk)) return Keypair.fromSecretKey(Uint8Array.from(pk));
+  if (!pk) throw new Error("secretKey missing");
+
   try {
-    const parsed = JSON.parse(pk);
-    if (Array.isArray(parsed)) return Keypair.fromSecretKey(Uint8Array.from(parsed));
-  } catch (e) { /* ignore */ }
-  try {
+    // JSON array
+    if (pk.trim().startsWith("[")) {
+      return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(pk)));
+    }
+
+    // base58
     return Keypair.fromSecretKey(bs58.decode(pk));
-  } catch (e) {
-    throw new Error("Invalid secret key format");
+  } catch (err) {
+    throw new Error("Invalid secret key format: " + err.message);
   }
 }
 
+// SEND ROUTE
 router.post("/send", async (req, res) => {
   try {
-    console.log("📩 /wallet/send body:", req.body);
+    console.log("\n📩 FULL BODY RECEIVED:", req.body);
+    console.log("TOKEN typeof:", typeof req.body.token);
+    console.log("TOKEN raw:", req.body.token);
 
-    const { secretKey, recipient, amount, senderAddress } = req.body;
+    const { secretKey, recipient, amount, token } = req.body;
 
-    if (!secretKey || !recipient || amount === undefined) {
+    if (!secretKey || !recipient || !amount || !token) {
       return res.status(400).json({ error: "Missing fields" });
     }
 
-    // normalize amount (accept comma or dot)
-    const numericAmount = Number(String(amount).replace(",", "."));
-    if (isNaN(numericAmount) || numericAmount <= 0) {
+    const tokenNorm = String(token).trim().toUpperCase();
+    console.log("TOKEN normalized:", tokenNorm);
+
+    const sender = keypairFromSecretKey(String(secretKey));
+    const senderPublicKey = sender.publicKey;
+    const recipientPubkey = new PublicKey(recipient);
+
+    const amt = Number(amount);
+    if (isNaN(amt) || amt <= 0)
       return res.status(400).json({ error: "Invalid amount" });
+
+    // --------------------------
+    // SEND SOL
+    // --------------------------
+    if (tokenNorm === "SOL") {
+      console.log("🔥 SENDING SOL");
+
+      const lamports = Math.floor(amt * 1e9);
+
+      const tx = new Transaction().add(
+        SystemProgram.transfer({
+          fromPubkey: senderPublicKey,
+          toPubkey: recipientPubkey,
+          lamports,
+        })
+      );
+
+      tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+      tx.feePayer = senderPublicKey;
+
+      const signature = await sendAndConfirmTransaction(
+        connection,
+        tx,
+        [sender],
+        { skipPreflight: false }
+      );
+
+      return res.json({ signature });
     }
 
-    // build keypair and check publicKey
-    const sender = keypairFromSecretKey(secretKey);
-    const senderPub = sender.publicKey.toBase58();
-    console.log("From publicKey (derived):", senderPub);
-    if (senderAddress && senderAddress !== senderPub) {
-      console.warn("Sender address mismatch:", senderAddress, "vs", senderPub);
-      // opcional: retornar erro ou só logar; aqui vamos retornar erro
-      return res.status(400).json({ error: "Sender address does not match provided secretKey" });
+    // --------------------------
+    // SEND USDC (SPL TOKEN)
+    // --------------------------
+    if (tokenNorm === "USDC") {
+      console.log("💵 SENDING USDC");
+
+      const mint = USDC_MINT;
+      const decimals = 6;
+      const rawAmount = Math.floor(amt * 10 ** decimals);
+
+      const fromATA = await getOrCreateAssociatedTokenAccount(
+        connection,
+        sender,
+        mint,
+        senderPublicKey
+      );
+
+      const toATA = await getOrCreateAssociatedTokenAccount(
+        connection,
+        sender,
+        mint,
+        recipientPubkey
+      );
+
+      const ix = createTransferInstruction(
+        fromATA.address,
+        toATA.address,
+        senderPublicKey,
+        rawAmount
+      );
+
+      const tx = new Transaction().add(ix);
+
+      tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+      tx.feePayer = senderPublicKey;
+
+      const signature = await sendAndConfirmTransaction(
+        connection,
+        tx,
+        [sender],
+        { skipPreflight: false }
+      );
+
+      return res.json({ signature });
     }
 
-    const toPub = new PublicKey(recipient);
-    const lamports = Math.round(numericAmount * LAMPORTS_PER_SOL);
-
-    // montar transação
-    const tx = new Transaction().add(
-      SystemProgram.transfer({
-        fromPubkey: sender.publicKey,
-        toPubkey: toPub,
-        lamports,
-      })
-    );
-
-    // SIMULAR primeiro para pegar erros e logs
-    const { value } = await connection.simulateTransaction(tx, [sender]);
-    if (value && value.err) {
-      console.error("Simulation failed:", value);
-      return res.status(400).json({
-        error: "Simulation failed.",
-        message: value.err,
-        logs: value.logs || [],
-      });
-    }
-
-    // enviar e confirmar
-    const signature = await sendAndConfirmTransaction(connection, tx, [sender]);
-    return res.json({ signature });
-
+    return res.status(400).json({ error: "Invalid token" });
   } catch (err) {
     console.error("SEND ERROR:", err);
-    return res.status(500).json({ error: err.message || String(err) });
+    return res.status(500).json({ error: err.message });
   }
 });
 
