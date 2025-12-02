@@ -10,7 +10,7 @@ const authRoutes = require("./routes/auth");
 const walletRoutes = require("./routes/wallet");
 const userRoutes = require("./routes/user");
 const sessionRoutes = require("./routes/session");
-const swapRoutes = require("./routes/swap");   //  👈 ROTA DO SWAP
+// const swapRoutes = require("./routes/swap");   //  👈 ROTA DO SWAP
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -70,7 +70,7 @@ app.use("/auth", authRoutes);
 app.use("/wallet", walletRoutes);
 app.use("/user", userRoutes);
 app.use("/session", sessionRoutes);
-app.use("/swap", swapRoutes);  //  👈 AQUI SEU SWAP ESTÁ ATIVO
+// app.use("/swap", swapRoutes);  //  👈 AQUI SEU SWAP ESTÁ ATIVO
 
 app.get("/", (req, res) => {
   res.send("API OK - Veilfi Backend Running");
