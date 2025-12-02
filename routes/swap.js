@@ -1,18 +1,16 @@
 // ========================================================
-//  SWAP API COMPLETA (Tudo em um arquivo)
-//  Com fallback automático para problemas de rede
+//  SWAP API COMPLETA (Corrigido para Render)
 // ========================================================
 
 const express = require("express");
 const router = express.Router();
 const {
   Connection,
-  PublicKey,
   Keypair,
   VersionedTransaction,
 } = require("@solana/web3.js");
 const bs58 = require("bs58");
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+const fetch = require("node-fetch"); // Mudança crítica aqui
 
 // Configuração
 const SOL_MINT = "So11111111111111111111111111111111111111112";
@@ -25,30 +23,14 @@ const RPC_ENDPOINTS = [
   "https://solana-api.projectserum.com"
 ];
 
-// Lista de endpoints Jupiter com fallback
+// Lista de endpoints Jupiter
 const JUPITER_ENDPOINTS = [
   "https://quote-api.jup.ag/v6",
-  "https://jupiter-api-v6.fly.dev/v6",
-  "https://jup.ag/v6"
+  "https://jupiter-api-v6.fly.dev/v6"
 ];
 
-// ========================================================
-//  FUNÇÕES AUXILIARES
-// ========================================================
-
-// Cria conexão com fallback
-function createConnection() {
-  for (const endpoint of RPC_ENDPOINTS) {
-    try {
-      console.log(`Tentando conectar ao RPC: ${endpoint}`);
-      const connection = new Connection(endpoint, "confirmed");
-      return connection;
-    } catch (error) {
-      console.warn(`RPC ${endpoint} falhou: ${error.message}`);
-    }
-  }
-  throw new Error("Não foi possível conectar a nenhum RPC");
-}
+// Timeout helper
+const timeout = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Parse da chave privada
 function parsePrivateKey(secretKey) {
@@ -66,155 +48,92 @@ function parsePrivateKey(secretKey) {
   }
 }
 
-// Fetch com timeout e retry
-async function fetchWithRetry(url, options = {}, maxRetries = 3) {
-  let lastError;
-  
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
-      
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal,
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
+// Fetch simplificado
+async function simpleFetch(url, options = {}, timeoutMs = 10000) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`Timeout após ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    fetch(url, options)
+      .then(response => {
+        clearTimeout(timeoutId);
+        resolve(response);
+      })
+      .catch(error => {
+        clearTimeout(timeoutId);
+        reject(error);
       });
-      
-      clearTimeout(timeout);
-      
-      if (response.ok) {
-        return response;
-      }
-      
-      lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
-      console.warn(`Tentativa ${attempt} falhou: ${lastError.message}`);
-      
-    } catch (error) {
-      lastError = error;
-      console.warn(`Tentativa ${attempt} erro: ${error.message}`);
-    }
-    
-    // Aguarda antes de tentar novamente
-    if (attempt < maxRetries) {
-      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-    }
-  }
-  
-  throw lastError || new Error("Falha após todas as tentativas");
+  });
 }
 
-// Tenta múltiplos endpoints da Jupiter
-async function tryJupiterQuote(inputMint, outputMint, amount, slippageBps = 100) {
-  let lastError;
-  
+// Tenta obter quote
+async function getJupiterQuote(inputMint, outputMint, amount, slippageBps = 100) {
   for (const baseUrl of JUPITER_ENDPOINTS) {
     try {
-      const quoteUrl = `${baseUrl}/quote` +
-        `?inputMint=${inputMint}` +
-        `&outputMint=${outputMint}` +
-        `&amount=${amount}` +
-        `&slippageBps=${slippageBps}` +
-        `&onlyDirectRoutes=false`;
+      const quoteUrl = `${baseUrl}/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}&slippageBps=${slippageBps}&onlyDirectRoutes=false`;
       
-      console.log(`Tentando quote em: ${baseUrl}`);
+      console.log(`Tentando quote: ${quoteUrl}`);
       
-      const response = await fetchWithRetry(quoteUrl, {}, 2);
+      const response = await simpleFetch(quoteUrl);
+      if (!response.ok) continue;
+      
       const data = await response.json();
-      
-      if (data.error) {
-        throw new Error(data.error);
-      }
+      if (data.error) continue;
       
       if (data.outAmount) {
         console.log(`Quote obtida de ${baseUrl}`);
         return { data, baseUrl };
       }
-      
     } catch (error) {
-      lastError = error;
       console.warn(`Endpoint ${baseUrl} falhou: ${error.message}`);
       continue;
     }
   }
   
-  throw lastError || new Error("Todos os endpoints da Jupiter falharam");
+  throw new Error("Não foi possível obter quote de nenhum endpoint");
 }
 
-// Tenta múltiplos endpoints para swap
-async function tryJupiterSwap(quoteData, userPublicKey, baseUrl) {
+// Tenta obter transação de swap
+async function getSwapTransaction(quoteData, userPublicKey, baseUrl) {
   const swapBody = {
     quoteResponse: quoteData,
     userPublicKey,
     wrapAndUnwrapSol: true,
     dynamicComputeUnitLimit: true,
-    prioritizationFeeLamports: {
-      priorityLevelWithMaxLamports: {
-        priorityLevel: "veryHigh",
-        maxLamports: 1000000
-      }
-    },
     useSharedAccounts: true
   };
   
-  // Tenta o mesmo endpoint da quote primeiro
-  try {
-    const swapUrl = `${baseUrl}/swap`;
-    console.log(`Tentando swap em: ${swapUrl}`);
-    
-    const response = await fetchWithRetry(swapUrl, {
-      method: 'POST',
-      body: JSON.stringify(swapBody)
-    }, 2);
-    
-    const data = await response.json();
-    
-    if (data.error) {
-      throw new Error(data.error);
-    }
-    
-    if (data.swapTransaction) {
-      return data;
-    }
-    
-  } catch (error) {
-    console.warn(`Swap no endpoint ${baseUrl} falhou: ${error.message}`);
-  }
-  
-  // Se falhar, tenta outros endpoints
-  for (const altBaseUrl of JUPITER_ENDPOINTS) {
-    if (altBaseUrl === baseUrl) continue;
-    
+  for (const endpoint of JUPITER_ENDPOINTS) {
     try {
-      const swapUrl = `${altBaseUrl}/swap`;
-      console.log(`Tentando swap alternativo em: ${swapUrl}`);
+      const swapUrl = `${endpoint}/swap`;
+      console.log(`Tentando swap em: ${swapUrl}`);
       
-      const response = await fetchWithRetry(swapUrl, {
+      const response = await simpleFetch(swapUrl, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(swapBody)
-      }, 2);
+      });
+      
+      if (!response.ok) continue;
       
       const data = await response.json();
+      if (data.error) continue;
       
       if (data.swapTransaction) {
         return data;
       }
-      
     } catch (error) {
-      console.warn(`Endpoint alternativo ${altBaseUrl} falhou: ${error.message}`);
+      console.warn(`Swap endpoint ${endpoint} falhou: ${error.message}`);
       continue;
     }
   }
   
-  throw new Error("Não foi possível obter transação de swap de nenhum endpoint");
+  throw new Error("Não foi possível obter transação de swap");
 }
 
 // ========================================================
-//  ROTA PRINCIPAL DE SWAP
+//  ROTA PRINCIPAL
 // ========================================================
 
 router.post("/jupiter", async (req, res) => {
@@ -232,7 +151,7 @@ router.post("/jupiter", async (req, res) => {
       direction 
     } = req.body;
     
-    // Validações
+    // Validações básicas
     if (!carteiraUsuarioPublica || !carteiraUsuarioPrivada) {
       return res.status(400).json({ 
         success: false,
@@ -240,230 +159,142 @@ router.post("/jupiter", async (req, res) => {
       });
     }
     
-    const numAmount = Number(amount);
+    const numAmount = parseFloat(amount);
     if (isNaN(numAmount) || numAmount <= 0) {
       return res.status(400).json({ 
         success: false,
-        error: `Amount inválido: ${amount}` 
+        error: "Amount inválido" 
       });
     }
     
     if (!["SOL_TO_USDC", "USDC_TO_SOL"].includes(direction)) {
       return res.status(400).json({ 
         success: false,
-        error: "Direction inválida. Use SOL_TO_USDC ou USDC_TO_SOL" 
+        error: "Direction inválida" 
       });
     }
     
-    // Configurar mints
+    // Configurar swap
     const inputMint = direction === "SOL_TO_USDC" ? SOL_MINT : USDC_MINT;
     const outputMint = direction === "SOL_TO_USDC" ? USDC_MINT : SOL_MINT;
     const amountInSmallestUnits = direction === "SOL_TO_USDC" 
-      ? Math.floor(numAmount * 1e9)  // SOL -> lamports
-      : Math.floor(numAmount * 1e6); // USDC -> micro USDC
+      ? Math.floor(numAmount * 1e9)
+      : Math.floor(numAmount * 1e6);
     
-    console.log(`Config: ${numAmount} ${direction}`);
-    console.log(`Input: ${inputMint}`);
-    console.log(`Output: ${outputMint}`);
-    console.log(`Amount: ${amountInSmallestUnits}`);
+    console.log(`Swap: ${numAmount} ${direction}, unidades: ${amountInSmallestUnits}`);
     
-    // 1. OBTER QUOTE (com fallback)
-    console.log("Obtendo quote...");
-    const { data: quoteData, baseUrl: quoteBaseUrl } = await tryJupiterQuote(
+    // 1. Obter quote
+    const { data: quoteData, baseUrl } = await getJupiterQuote(
       inputMint,
       outputMint,
-      amountInSmallestUnits,
-      100 // 1% slippage
+      amountInSmallestUnits
     );
     
-    console.log("Quote obtida:", {
-      inAmount: quoteData.inAmount,
-      outAmount: quoteData.outAmount,
-      priceImpact: quoteData.priceImpactPct
-    });
-    
-    // 2. OBTER TRANSACTION (com fallback)
-    console.log("Obtendo transação...");
-    const swapData = await tryJupiterSwap(
+    // 2. Obter transação
+    const swapData = await getSwapTransaction(
       quoteData,
       carteiraUsuarioPublica,
-      quoteBaseUrl
+      baseUrl
     );
     
     if (!swapData.swapTransaction) {
-      throw new Error("Transação de swap não gerada");
+      throw new Error("Transação não gerada");
     }
     
-    // 3. ASSINAR TRANSACTION
-    console.log("Assinando transação...");
+    // 3. Assinar
     const userKeypair = parsePrivateKey(carteiraUsuarioPrivada);
     
-    // Verificar se a wallet corresponde
-    const userPubkey = userKeypair.publicKey.toBase58();
-    if (userPubkey !== carteiraUsuarioPublica) {
-      console.warn(`Public key mismatch: ${userPubkey} vs ${carteiraUsuarioPublica}`);
-    }
-    
-    // Deserializar e assinar
     const swapTransactionBuf = Buffer.from(swapData.swapTransaction, "base64");
     const transaction = VersionedTransaction.deserialize(swapTransactionBuf);
     transaction.sign([userKeypair]);
     
-    // 4. ENVIAR TRANSACTION
-    console.log("Enviando transação...");
-    const connection = createConnection();
-    const rawTransaction = transaction.serialize();
-    
-    // Tenta múltiplas RPCs
+    // 4. Enviar (tenta múltiplas RPCs)
     let signature;
-    let sendError;
+    let lastError;
     
     for (const rpcEndpoint of RPC_ENDPOINTS) {
       try {
-        const rpcConnection = new Connection(rpcEndpoint, "confirmed");
-        signature = await rpcConnection.sendRawTransaction(rawTransaction, {
-          skipPreflight: false,
-          preflightCommitment: "confirmed",
-          maxRetries: 3,
-        });
+        const connection = new Connection(rpcEndpoint, "confirmed");
+        signature = await connection.sendRawTransaction(
+          transaction.serialize(),
+          { skipPreflight: false, preflightCommitment: "confirmed" }
+        );
         
         console.log(`Transação enviada via ${rpcEndpoint}: ${signature}`);
-        sendError = null;
         break;
-        
       } catch (error) {
-        sendError = error;
-        console.warn(`Falha ao enviar via ${rpcEndpoint}: ${error.message}`);
+        lastError = error;
+        console.warn(`RPC ${rpcEndpoint} falhou: ${error.message}`);
         continue;
       }
     }
     
     if (!signature) {
-      throw sendError || new Error("Não foi possível enviar a transação");
+      throw lastError || new Error("Falha ao enviar transação");
     }
     
-    // 5. RETORNAR RESULTADO (não bloqueia confirmação)
-    const outputAmount = direction === "USDC_TO_SOL" 
-      ? (quoteData.outAmount / 1e9).toFixed(6)
-      : (quoteData.outAmount / 1e6).toFixed(2);
-    
+    // 5. Retornar sucesso
     const result = {
       success: true,
       signature,
       direction,
-      inputAmount: `${numAmount} ${direction.includes("SOL") ? "SOL" : "USDC"}`,
-      outputAmount: `${outputAmount} ${direction.includes("SOL") ? "USDC" : "SOL"}`,
+      inputAmount: numAmount,
+      outputAmount: direction === "USDC_TO_SOL" 
+        ? (quoteData.outAmount / 1e9).toFixed(6)
+        : (quoteData.outAmount / 1e6).toFixed(2),
       explorerUrl: `https://solscan.io/tx/${signature}`,
-      message: "Swap iniciado com sucesso!",
+      message: "Swap realizado!",
       timestamp: new Date().toISOString()
     };
-    
-    console.log("Swap realizado:", result);
-    
-    // Confirmação assíncrona (opcional)
-    setTimeout(async () => {
-      try {
-        const confirmation = await connection.confirmTransaction(signature, "confirmed");
-        console.log(`Confirmação para ${signature}:`, confirmation.value);
-      } catch (confErr) {
-        console.warn("Erro na confirmação:", confErr.message);
-      }
-    }, 1000);
     
     return res.json(result);
     
   } catch (error) {
-    console.error("ERRO NO SWAP:", error);
+    console.error("ERRO NO SWAP:", error.message);
     
-    // Mensagens de erro amigáveis
     let errorMessage = "Erro ao processar swap";
-    
     if (error.message.includes("insufficient funds")) {
-      errorMessage = "Saldo insuficiente para realizar o swap";
-    } else if (error.message.includes("Blockhash")) {
-      errorMessage = "Tempo expirado. Recarregue e tente novamente";
-    } else if (error.message.includes("signature")) {
-      errorMessage = "Erro na assinatura da transação";
-    } else if (error.message.includes("rate limit") || error.message.includes("429")) {
-      errorMessage = "Muitas requisições. Aguarde um momento";
-    } else if (error.message.includes("ENOTFOUND") || error.message.includes("network")) {
-      errorMessage = "Problema de conexão com a rede. Tente novamente";
-    } else if (error.message.includes("TOKEN_NOT_TRADABLE")) {
-      errorMessage = "Token não disponível para trading";
+      errorMessage = "Saldo insuficiente";
+    } else if (error.message.includes("timeout") || error.message.includes("Timeout")) {
+      errorMessage = "Tempo esgotado. Tente novamente";
+    } else if (error.message.includes("network") || error.message.includes("ENOTFOUND")) {
+      errorMessage = "Problema de rede. Verifique sua conexão";
     }
     
     return res.status(500).json({
       success: false,
-      error: errorMessage,
-      details: process.env.NODE_ENV === "development" ? error.message : undefined
+      error: errorMessage
     });
   }
 });
 
-// ========================================================
-//  ROTAS ADICIONAIS
-// ========================================================
+// Health check simplificado
+router.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    service: "swap-api",
+    timestamp: new Date().toISOString(),
+    endpoints: JUPITER_ENDPOINTS.length
+  });
+});
 
-// Health check
-router.get("/health", async (req, res) => {
+// Rota de teste
+router.get("/test", async (req, res) => {
   try {
-    // Testa conexão com a Jupiter
-    const testQuote = await fetchWithRetry(
-      `${JUPITER_ENDPOINTS[0]}/quote?inputMint=${SOL_MINT}&outputMint=${USDC_MINT}&amount=1000000&slippageBps=50`,
-      {},
-      1
-    ).catch(() => null);
-    
-    // Testa conexão com Solana
-    const connection = createConnection();
-    const slot = await connection.getSlot();
+    // Testa apenas o primeiro endpoint
+    const testUrl = `${JUPITER_ENDPOINTS[0]}/quote?inputMint=${SOL_MINT}&outputMint=${USDC_MINT}&amount=1000000&slippageBps=50`;
+    const response = await simpleFetch(testUrl, {}, 5000);
     
     res.json({
-      status: "healthy",
-      jupiterApi: testQuote ? "online" : "offline",
-      solanaConnection: slot ? "connected" : "disconnected",
-      timestamp: new Date().toISOString(),
-      endpoints: JUPITER_ENDPOINTS
+      status: response.ok ? "online" : "offline",
+      endpoint: JUPITER_ENDPOINTS[0],
+      ok: response.ok
     });
-    
   } catch (error) {
-    res.status(500).json({
-      status: "unhealthy",
+    res.json({
+      status: "error",
       error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-// Get quote apenas (para preview)
-router.post("/quote", async (req, res) => {
-  try {
-    const { inputMint = SOL_MINT, outputMint = USDC_MINT, amount, slippage = 50 } = req.body;
-    
-    if (!amount) {
-      return res.status(400).json({ error: "Amount é obrigatório" });
-    }
-    
-    const { data: quoteData, baseUrl } = await tryJupiterQuote(
-      inputMint,
-      outputMint,
-      amount,
-      slippage
-    );
-    
-    res.json({
-      success: true,
-      inputAmount: quoteData.inAmount,
-      outputAmount: quoteData.outAmount,
-      priceImpactPct: quoteData.priceImpactPct,
-      endpoint: baseUrl,
-      routes: quoteData.routePlan || []
-    });
-    
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
+      endpoint: JUPITER_ENDPOINTS[0]
     });
   }
 });
