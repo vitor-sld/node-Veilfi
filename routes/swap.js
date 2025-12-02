@@ -95,17 +95,36 @@ router.post("/jupiter", async (req, res) => {
       });
     }
 
-    if (!["SOL_TO_USDC", "USDC_TO_SOL"].includes(direction)) {
+    // Normalize direction to be case-insensitive and accept several common formats
+    function normalizeDirection(dir, from, to) {
+      if (!dir && from && to) {
+        dir = `${from}_TO_${to}`;
+      }
+      if (!dir || typeof dir !== 'string') return null;
+      const d = dir.trim().toUpperCase();
+      const cleaned = d.replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_');
+      if (cleaned.includes('SOL') && cleaned.includes('USDC')) {
+        return cleaned.indexOf('SOL') < cleaned.indexOf('USDC') ? 'SOL_TO_USDC' : 'USDC_TO_SOL';
+      }
+      return null;
+    }
+
+    const normalizedDirection = normalizeDirection(direction, req.body.from, req.body.to);
+    console.log("Normalized direction computed:", normalizedDirection);
+    if (!normalizedDirection) {
       return res.status(400).json({ 
         success: false,
-        error: "Direction inválida" 
+        error: "Direction inválida. Envie 'direction' como 'SOL_TO_USDC' ou 'USDC_TO_SOL' (aceita formas como 'SOL-USDC', 'sol->usdc', 'sol_usdc' etc.), ou envie 'from' e 'to' (e.g. from: 'SOL', to: 'USDC').",
+        received: direction
       });
     }
+    // Use canonical direction value going forward
+    const canonicalDirection = normalizedDirection;
 
     let inputMint, outputMint, amountInSmallestUnits;
     let inputSymbol, outputSymbol;
 
-    if (direction === "SOL_TO_USDC") {
+    if (canonicalDirection === "SOL_TO_USDC") {
       inputMint = SOL_MINT;
       outputMint = USDC_MINT;
       amountInSmallestUnits = Math.floor(numAmount * 1e9);
@@ -245,14 +264,14 @@ router.post("/jupiter", async (req, res) => {
     }, 1000);
 
     // 4. RETORNAR RESULTADO
-    const outputAmount = direction === "USDC_TO_SOL" 
+    const outputAmount = canonicalDirection === "USDC_TO_SOL" 
       ? (quoteData.outAmount / 1e9).toFixed(6) + " SOL"
       : (quoteData.outAmount / 1e6).toFixed(2) + " USDC";
 
     const result = {
       success: true,
       signature,
-      direction,
+      direction: canonicalDirection,
       inputAmount: `${amount} ${inputSymbol}`,
       outputAmount: outputAmount,
       explorerUrl: `https://solscan.io/tx/${signature}`,
