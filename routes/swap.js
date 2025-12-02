@@ -1,126 +1,159 @@
-// swap.js - USANDO JUPITER DIRETO
+// ========================================================
+//  VeilFi - Jupiter Swap (Public API) — NO API KEY NEEDED
+// ========================================================
+require("dotenv").config();
 const express = require("express");
 const router = express.Router();
-const { Connection, Keypair, VersionedTransaction } = require("@solana/web3.js");
+
+const {
+  Connection,
+  PublicKey,
+  Keypair,
+  VersionedTransaction,
+} = require("@solana/web3.js");
+
 const bs58 = require("bs58");
-const https = require("https"); // Usar módulo nativo
+const fetch = require("node-fetch");
 
-const SOL_MINT = "So11111111111111111111111111111111111111112";
-const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+// RPC normal da Solana
+const connection = new Connection(
+  "https://api.mainnet-beta.solana.com",
+  "confirmed"
+);
 
-// Função para fazer requisições HTTPS
-function httpsRequest(url, options = {}, body = null) {
-  return new Promise((resolve, reject) => {
-    const req = https.request(url, options, (res) => {
-      let data = "";
-      
-      res.on("data", chunk => data += chunk);
-      res.on("end", () => {
-        try {
-          resolve({
-            ok: res.statusCode >= 200 && res.statusCode < 300,
-            json: () => Promise.resolve(JSON.parse(data)),
-            status: res.statusCode
-          });
-        } catch (err) {
-          reject(err);
-        }
-      });
-    });
-    
-    req.on("error", reject);
-    
-    if (body) {
-      req.write(JSON.stringify(body));
-    }
-    
-    req.end();
-  });
+// ========================================================
+//  Converte a privateKey (sempre base58 do frontend)
+// ========================================================
+function parsePrivateKey(raw) {
+  try {
+    return Keypair.fromSecretKey(bs58.decode(raw));
+  } catch (e) {
+    console.error("Erro parsePrivateKey:", e);
+    throw new Error("Chave privada inválida (não é base58).");
+  }
 }
 
+// ========================================================
+//  SWAP Jupiter (Public API)
+// ========================================================
 router.post("/jupiter", async (req, res) => {
   try {
-    const { carteiraUsuarioPublica, carteiraUsuarioPrivada, amount, direction } = req.body;
-    
-    // Validações
-    if (!carteiraUsuarioPublica || !carteiraUsuarioPrivada || !amount || !direction) {
-      return res.status(400).json({ error: "Dados incompletos" });
+    const { carteiraUsuarioPublica, carteiraUsuarioPrivada, amount, direction } =
+      req.body;
+
+    if (!carteiraUsuarioPublica)
+      return res.status(400).json({ error: "Falta carteiraUsuarioPublica" });
+    if (!carteiraUsuarioPrivada)
+      return res.status(400).json({ error: "Falta carteiraUsuarioPrivada" });
+
+    // Mints oficiais
+    const SOL = "So11111111111111111111111111111111111111112";
+    const USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G3ky6a9qZ7bL92";
+
+    let inputMint, outputMint, atomicAmount;
+
+    // ====================================================
+    // Conversão dependendo da direção (SOL ↔ USDC)
+    // ====================================================
+    if (direction === "SOL_TO_USDC") {
+      inputMint = SOL;
+      outputMint = USDC;
+      atomicAmount = Math.floor(Number(amount) * 1e9); // lamports
+
+    } else if (direction === "USDC_TO_SOL") {
+      inputMint = USDC;
+      outputMint = SOL;
+      atomicAmount = Math.floor(Number(amount) * 1e6); // USDC decimals
+
+    } else {
+      return res.status(400).json({ error: "Direção inválida." });
     }
-    
-    // Configurar swap
-    const isSolToUsdc = direction === "SOL_TO_USDC";
-    const inputMint = isSolToUsdc ? SOL_MINT : USDC_MINT;
-    const outputMint = isSolToUsdc ? USDC_MINT : SOL_MINT;
-    const amountInSmallestUnits = isSolToUsdc ? Math.floor(amount * 1e9) : Math.floor(amount * 1e6);
-    
-    // 1. Obter quote
-    const quoteUrl = `https://quote-api.jup.ag/v6/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amountInSmallestUnits}&slippageBps=100`;
-    
-    const quoteRes = await httpsRequest(quoteUrl, {
-      method: "GET",
-      headers: { "Accept": "application/json" }
-    });
-    
-    const quoteData = await quoteRes.json();
-    if (!quoteRes.ok || quoteData.error) {
-      throw new Error(quoteData.error || "Erro ao obter quote");
+
+    console.log("=== JUPITER SWAP REQUEST ===");
+    console.log("Input Mint:", inputMint);
+    console.log("Output Mint:", outputMint);
+    console.log("Lamports:", atomicAmount);
+
+    // ====================================================
+    // 1) QUOTE via API pública
+    // ====================================================
+    const quoteUrl =
+      `https://public.jupiterapi.com/quote?` +
+      `inputMint=${inputMint}&outputMint=${outputMint}&amount=${atomicAmount}`;
+
+    console.log("QUOTE URL:", quoteUrl);
+
+    const quoteRes = await fetch(quoteUrl);
+    const quoteJson = await quoteRes.json();
+
+    if (!quoteJson.outAmount) {
+      console.error("Quote error:", quoteJson);
+      return res.status(500).json({
+        error: "Jupiter quote failed",
+        status: quoteRes.status,
+        body: quoteJson,
+      });
     }
-    
-    // 2. Obter transação
-    const swapRes = await httpsRequest(
-      "https://quote-api.jup.ag/v6/swap",
+
+    // ====================================================
+    // 2) Pegar a TRANSAÇÃO pronta (swap-instructions)
+    // ====================================================
+    const swapRes = await fetch(
+      "https://public.jupiterapi.com/swap-instructions",
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" }
-      },
-      {
-        quoteResponse: quoteData,
-        userPublicKey: carteiraUsuarioPublica,
-        wrapAndUnwrapSol: true
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          quoteResponse: quoteJson,
+          userPublicKey: carteiraUsuarioPublica,
+        }),
       }
     );
-    
-    const swapData = await swapRes.json();
-    if (!swapRes.ok || swapData.error) {
-      throw new Error(swapData.error || "Erro ao obter transação");
+
+    const swapJson = await swapRes.json();
+
+    if (!swapJson.swapTransaction) {
+      console.error("Swap instructions missing:", swapJson);
+      return res.status(500).json({
+        error: "Swap instructions inválidas",
+        details: swapJson,
+      });
     }
-    
-    // 3. Assinar
-    let keypair;
-    try {
-      if (carteiraUsuarioPrivada.startsWith("[")) {
-        const arr = JSON.parse(carteiraUsuarioPrivada);
-        keypair = Keypair.fromSecretKey(new Uint8Array(arr));
-      } else {
-        keypair = Keypair.fromSecretKey(bs58.decode(carteiraUsuarioPrivada));
-      }
-    } catch (err) {
-      throw new Error("Chave privada inválida");
-    }
-    
-    // 4. Enviar
-    const transaction = VersionedTransaction.deserialize(
-      Buffer.from(swapData.swapTransaction, "base64")
-    );
-    
-    transaction.sign([keypair]);
-    
-    const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
-    const signature = await connection.sendRawTransaction(transaction.serialize(), {
+
+    // ====================================================
+    // 3) ASSINAR A TRANSAÇÃO
+    // ====================================================
+    const userKeypair = parsePrivateKey(carteiraUsuarioPrivada);
+
+    const txBuffer = Buffer.from(swapJson.swapTransaction, "base64");
+    const tx = VersionedTransaction.deserialize(txBuffer);
+
+    tx.sign([userKeypair]);
+
+    // ====================================================
+    // 4) ENVIAR PARA A REDE
+    // ====================================================
+    const signature = await connection.sendRawTransaction(tx.serialize(), {
       skipPreflight: false,
-      preflightCommitment: "confirmed"
     });
-    
-    res.json({
-      success: true,
+
+    await connection.confirmTransaction(signature, "confirmed");
+
+    console.log("SWAP SIGNATURE:", signature);
+
+    return res.json({
+      sucesso: true,
       signature,
-      explorerUrl: `https://solscan.io/tx/${signature}`
+      direction,
+      sent: amount,
+      received: quoteJson.outAmount,
     });
-    
-  } catch (error) {
-    console.error("Swap error:", error);
-    res.status(500).json({
-      error: error.message || "Erro no swap"
+
+  } catch (err) {
+    console.error("JUPITER SWAP ERROR:", err);
+    return res.status(500).json({
+      error: "Erro ao executar swap.",
+      details: err.message,
     });
   }
 });
