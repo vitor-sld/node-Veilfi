@@ -187,3 +187,57 @@ exports.getOrder = (req, res) => {
   if (!o) return res.status(404).json({ ok: false, error: "NOT_FOUND" });
   return res.json({ ok: true, order: o });
 };
+
+/**
+ * Jupiter Quote Endpoint
+ * Body: { inputMint, outputMint, amount, slippageBps, userPublicKey }
+ * Necessita: process.env.JUPITER_API_KEY
+ */
+exports.getQuote = async (req, res) => {
+  try {
+    const { inputMint, outputMint, amount, slippageBps, userPublicKey } = req.body ?? {};
+
+    if (!inputMint || !outputMint || !amount || !userPublicKey) {
+      return res.status(400).json({ error: "Parâmetros faltando" });
+    }
+
+    const API_KEY = process.env.JUPITER_API_KEY;
+    if (!API_KEY) {
+      return res.status(500).json({ error: "API KEY da Jupiter não configurada" });
+    }
+
+    const url = `https://quote-api.jup.ag/v6/quote?${new URLSearchParams({
+      inputMint,
+      outputMint,
+      amount: String(amount),
+      slippageBps: String(slippageBps || 50),
+      onlyDirectRoutes: "false",
+    }).toString()}`;
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "X-API-KEY": API_KEY,
+        "User-Agent": "Veilfi/Backend",
+      },
+    });
+
+    if (!response.ok) {
+      const err = await response.text().catch(() => "Unknown error");
+      return res.status(response.status).json({
+        error: "Erro ao obter cotação",
+        details: err,
+      });
+    }
+
+    const data = await response.json();
+    return res.json(data);
+
+  } catch (err) {
+    console.error("Erro /swap/quote:", err);
+    return res.status(500).json({
+      error: "Erro ao obter cotação",
+      details: String(err),
+    });
+  }
+};
