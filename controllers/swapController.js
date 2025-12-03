@@ -206,7 +206,7 @@ exports.getQuote = async (req, res) => {
       return res.status(500).json({ error: "API KEY da Jupiter não configurada" });
     }
 
-    const url = `https://quote-api.jup.ag/v6/quote?${new URLSearchParams({
+    const url = `https://api.jup.ag/v6/quote?${new URLSearchParams({
       inputMint,
       outputMint,
       amount: String(amount),

@@ -1,7 +1,7 @@
 const fetch = require("node-fetch");
 const { Connection, VersionedTransaction } = require("@solana/web3.js");
 
-const JUPITER_SWAP_URL = "https://quote-api.jup.ag/v6";
+const JUPITER_SWAP_URL = "https://api.jup.ag/v6";
 const RPC = process.env.RPC_URL;
 const connection = new Connection(RPC, "confirmed");
 
