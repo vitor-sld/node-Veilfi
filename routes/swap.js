@@ -1,5 +1,5 @@
 // =======================================================
-//  VeilFi — Swap Oficial usando jupiter-swap-api-client
+//  VeilFi — Swap Oficial usando Jupiter HTTP API (CORRETO)
 // =======================================================
 require("dotenv").config();
 const express = require("express");
@@ -8,16 +8,11 @@ const router = express.Router();
 const {
   Connection,
   Keypair,
-  PublicKey,
   VersionedTransaction,
 } = require("@solana/web3.js");
 
 const bs58 = require("bs58");
-
-// 🚀 OFICIAL Jupiter Client
-const {
-  JupiterSwapApi,
-} = require("jupiter-swap-api-client");
+const fetch = require("node-fetch");
 
 // =======================================================
 //  RPC Connection
@@ -27,14 +22,6 @@ const connection = new Connection(
     "https://api.mainnet-beta.solana.com",
   "confirmed"
 );
-
-// =======================================================
-//  Inicializa o client da Jupiter
-// =======================================================
-const jupiter = new JupiterSwapApi({
-  basePath: "https://api.jup.ag", // URL nova, confiável
-  fetch: (...args) => fetch(...args),
-});
 
 // =======================================================
 //  Converte a chave privada base58
@@ -86,7 +73,7 @@ router.post("/jupiter", async (req, res) => {
     } else if (direction === "USDC_TO_SOL") {
       inputMint = USDC;
       outputMint = SOL;
-      atomicAmount = Math.floor(amount * 1e6);
+      atomicAmount = Math.floor(amount * 1e6); // micro USDC
     } else {
       return res.status(400).json({ error: "Direção inválida" });
     }
@@ -94,17 +81,16 @@ router.post("/jupiter", async (req, res) => {
     console.log("=== VEILFI — NOVO SWAP JUPITER ===");
     console.log("Input:", inputMint);
     console.log("Output:", outputMint);
-    console.log("Atomic amount:", atomicAmount);
+    console.log("Atomic Amount:", atomicAmount);
 
     // ===================================================
     //  1) QUOTE
     // ===================================================
-    const quote = await jupiter.quoteGet({
-      inputMint,
-      outputMint,
-      amount: atomicAmount,
-      slippageBps: 100,
-    });
+    const quoteResponse = await fetch(
+      `https://api.jup.ag/swap/v1/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${atomicAmount}&slippageBps=100`
+    );
+
+    const quote = await quoteResponse.json();
 
     if (!quote || !quote.outAmount) {
       return res.status(500).json({
@@ -114,14 +100,21 @@ router.post("/jupiter", async (req, res) => {
     }
 
     // ===================================================
-    //  2) Transação gerada pela Jupiter
+    //  2) TRANSAÇÃO DE SWAP
     // ===================================================
-    const swapTx = await jupiter.swapPost({
-      swapRequest: {
-        quote,
-        userPublicKey: carteiraUsuarioPublica,
-      },
-    });
+    const swapResponse = await fetch(
+      "https://api.jup.ag/swap/v1/swap",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          quote,
+          userPublicKey: carteiraUsuarioPublica,
+        }),
+      }
+    );
+
+    const swapTx = await swapResponse.json();
 
     if (!swapTx.swapTransaction) {
       return res.status(500).json({
@@ -131,7 +124,7 @@ router.post("/jupiter", async (req, res) => {
     }
 
     // ===================================================
-    //  3) ASSINAR
+    //  3) ASSINAR TRANSAÇÃO
     // ===================================================
     const user = parsePrivateKey(carteiraUsuarioPrivada);
 
@@ -141,13 +134,11 @@ router.post("/jupiter", async (req, res) => {
     tx.sign([user]);
 
     // ===================================================
-    //  4) ENVIAR
+    //  4) ENVIAR PARA A SOLANA
     // ===================================================
     const signature = await connection.sendRawTransaction(
       tx.serialize(),
-      {
-        skipPreflight: false,
-      }
+      { skipPreflight: false }
     );
 
     await connection.confirmTransaction(signature, "confirmed");
