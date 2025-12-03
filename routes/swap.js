@@ -176,6 +176,28 @@ router.post("/swap", async (req, res) => {
     const amountUi = req.body.amount ?? req.body.amountUi ?? req.body.usdAmount ?? req.body.solAmount;
     const amountInSmallestUnits = req.body.amountInSmallestUnits ?? req.body.atomicAmount ?? req.body.amountAtomic;
 
+    // If frontend sent a full `quote` object (from previous /quote), accept it and extract mints/amounts
+    if (req.body.quote && typeof req.body.quote === 'object') {
+      try {
+        const q = req.body.quote;
+        // quote may include inputMint/outputMint and inAmount/outAmount as strings
+        from = from || q.inputMint || q.inputMintAddress || q.inputMintAddressString;
+        to = to || q.outputMint || q.outputMintAddress || q.outputMintAddressString;
+        // prefer inAmount for ExactIn swaps, fallback to outAmount
+        const inAmt = q.inAmount ?? q.inAmountString ?? q.amount ?? q.inAmountAtomic;
+        const outAmt = q.outAmount ?? q.outAmountString ?? q.amountOut;
+        if ((inAmt !== undefined && inAmt !== null) && (amountInSmallestUnits === undefined || amountInSmallestUnits === null)) {
+          // ensure numeric
+          amountInSmallestUnits = Number(inAmt);
+        } else if ((outAmt !== undefined && outAmt !== null) && (amountInSmallestUnits === undefined || amountInSmallestUnits === null)) {
+          amountInSmallestUnits = Number(outAmt);
+        }
+        console.log('Using quote payload to fill from/to/amountInSmallestUnits');
+      } catch (e) {
+        console.warn('Failed to parse quote object from body', e);
+      }
+    }
+
     // Mask private key for logs
     const maskedPriv = privateKey ? ("***" + String(privateKey).slice(-8)) : undefined;
     console.log("=== SWAP REQUEST ===", {
