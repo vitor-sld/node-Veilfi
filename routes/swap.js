@@ -249,11 +249,15 @@ router.post("/swap", async (req, res) => {
 
     // 2) Criar transação de swap via Jupiter
     console.log('Creating swap with Jupiter', { userPublicKey: publicKey, wrapAndUnwrapSol: true });
+    // Jupiter expects `quoteResponse` as the field name for the quote payload.
+    // Send both `quoteResponse` and `quote` for broader compatibility with different Jupiter endpoints.
     const swapRes = await axios.post(JUPITER_SWAP, {
+      quoteResponse: quote,
       quote,
       userPublicKey: publicKey,
       wrapAndUnwrapSol: true,
     });
+    console.log('Jupiter swap response keys:', Object.keys(swapRes.data || {}));
     const swapTxBase64 = swapRes.data?.swapTransaction;
 
     if (!swapTxBase64) {
