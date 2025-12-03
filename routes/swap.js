@@ -6,8 +6,8 @@ const router = express.Router();
 // ===============================
 //      JUPITER URLs CORRETAS
 // ===============================
-const JUP_API = "https://quote-api.jup.ag/v6/quote";
-const JUPITER_SWAP = "https://quote-api.jup.ag/v6/swap";
+const JUP_API = "https://api.jup.ag/v6/quote";
+const JUPITER_SWAP = "https://api.jup.ag/v6/swap";
 
 // TOKENS MAINNET
 const TOKENS = {
