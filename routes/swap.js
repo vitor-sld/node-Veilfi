@@ -174,7 +174,7 @@ router.post("/swap", async (req, res) => {
 
     // Accept amount (UI) or amountInSmallestUnits (atomic)
     const amountUi = req.body.amount ?? req.body.amountUi ?? req.body.usdAmount ?? req.body.solAmount;
-    const amountInSmallestUnits = req.body.amountInSmallestUnits ?? req.body.atomicAmount ?? req.body.amountAtomic;
+    let amountInSmallestUnits = req.body.amountInSmallestUnits ?? req.body.atomicAmount ?? req.body.amountAtomic;
 
     // If frontend sent a full `quote` object (from previous /quote), accept it and extract mints/amounts
     if (req.body.quote && typeof req.body.quote === 'object') {
