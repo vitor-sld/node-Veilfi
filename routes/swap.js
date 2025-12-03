@@ -1,5 +1,5 @@
 // =======================================================
-//  VeilFi — Swap Oficial usando Jupiter HTTP API (CORRETO)
+//  VeilFi — Swap Oficial usando Jupiter HTTP API (CORRIGIDO)
 // =======================================================
 require("dotenv").config();
 const express = require("express");
@@ -36,6 +36,33 @@ function parsePrivateKey(secretKey) {
 }
 
 // =======================================================
+//  Normaliza a direction enviada pelo front
+// =======================================================
+function normalizeDirection(direction) {
+  if (!direction) return null;
+
+  const dir = direction.toUpperCase();
+
+  // Seu formato atual
+  if (dir === "SOL_TO_USDC") return "SOL_TO_USDC";
+  if (dir === "USDC_TO_SOL") return "USDC_TO_SOL";
+
+  // Jupiter padrão
+  if (dir === "INPUT") return "SOL_TO_USDC";
+  if (dir === "OUTPUT") return "USDC_TO_SOL";
+
+  // Alternativas comuns
+  if (dir === "IN") return "SOL_TO_USDC";
+  if (dir === "OUT") return "USDC_TO_SOL";
+
+  if (dir === "BUY") return "USDC_TO_SOL";
+  if (dir === "SELL") return "SOL_TO_USDC";
+
+  // Se nada bater → inválido
+  return null;
+}
+
+// =======================================================
 //  ROTA PRINCIPAL DO SWAP
 // =======================================================
 router.post("/jupiter", async (req, res) => {
@@ -57,28 +84,34 @@ router.post("/jupiter", async (req, res) => {
     if (!amount || Number(amount) <= 0)
       return res.status(400).json({ error: "Amount inválido" });
 
-    // Mints Oficiais
+    // Normaliza direction para o formato final
+    const dir = normalizeDirection(direction);
+
+    if (!dir) {
+      return res.status(400).json({ error: "Direção inválida" });
+    }
+
+    // Mints
     const SOL = "So11111111111111111111111111111111111111112";
     const USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 
     let inputMint, outputMint, atomicAmount;
 
     // ===================================================
-    //  Direção (SOL → USDC ou USDC → SOL)
+    //  Direção (sempre garantido após normalizeDirection)
     // ===================================================
-    if (direction === "SOL_TO_USDC") {
+    if (dir === "SOL_TO_USDC") {
       inputMint = SOL;
       outputMint = USDC;
       atomicAmount = Math.floor(amount * 1e9); // lamports
-    } else if (direction === "USDC_TO_SOL") {
+    } else {
       inputMint = USDC;
       outputMint = SOL;
       atomicAmount = Math.floor(amount * 1e6); // micro USDC
-    } else {
-      return res.status(400).json({ error: "Direção inválida" });
     }
 
     console.log("=== VEILFI — NOVO SWAP JUPITER ===");
+    console.log("Direction normalizada:", dir);
     console.log("Input:", inputMint);
     console.log("Output:", outputMint);
     console.log("Atomic Amount:", atomicAmount);
@@ -146,10 +179,10 @@ router.post("/jupiter", async (req, res) => {
     return res.json({
       sucesso: true,
       signature,
-      direcao: direction,
+      direction: dir,
       enviado: amount,
       recebido:
-        direction === "SOL_TO_USDC"
+        dir === "SOL_TO_USDC"
           ? quote.outAmount / 1e6
           : quote.outAmount / 1e9,
     });
