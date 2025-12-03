@@ -73,16 +73,15 @@ router.post("/quote", async (req, res) => {
     let from = req.body.from || req.body.fromSymbol || req.body.inputMint || req.body.inputMintSymbol;
     let to = req.body.to || req.body.toSymbol || req.body.outputMint || req.body.outputMintSymbol;
 
-    // If client sent a `direction` like "SOL_USDC" or "SOL->USDC", parse it
+    // If client sent a `direction` like "SOL_USDC", "SOL->USDC" or "SOL_TO_USDC", parse it
     const direction = req.body.direction || req.body.pair;
     if ((!from || !to) && direction && typeof direction === 'string') {
-      const sep = direction.includes('->') ? '->' : (direction.includes('_') ? '_' : (direction.includes('-') ? '-' : null));
-      if (sep) {
-        const parts = direction.split(sep).map(s => s.trim());
-        if (parts.length === 2) {
-          from = from || parts[0];
-          to = to || parts[1];
-        }
+      // normalize separators to spaces and remove the literal 'TO' token (common pattern)
+      const cleaned = direction.replace(/->/g, ' ').replace(/[_-]/g, ' ');
+      const parts = cleaned.split(/\s+/).map(s => s.trim()).filter(Boolean).filter(s => s.toUpperCase() !== 'TO');
+      if (parts.length >= 2) {
+        from = from || parts[0];
+        to = to || parts[1];
       }
     }
 
