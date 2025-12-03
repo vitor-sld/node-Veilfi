@@ -20,12 +20,22 @@ const JUP_API = "https://quote-api.jup.ag/v6/quote";
 // ====== ROTA /quote ======
 router.post("/quote", async (req, res) => {
   try {
-    const { inputMint, outputMint, amount } = req.body;
+    const { from, to, amount } = req.body;
 
-    if (!inputMint || !outputMint || !amount) {
+    if (!from || !to || !amount) {
       return res.status(400).json({
         error: "Parâmetros inválidos",
-        details: "inputMint, outputMint e amount são obrigatórios"
+        details: "from, to e amount são obrigatórios"
+      });
+    }
+
+    const inputMint = TOKENS[from.toUpperCase()];
+    const outputMint = TOKENS[to.toUpperCase()];
+
+    if (!inputMint || !outputMint) {
+      return res.status(400).json({
+        error: "Token inválido",
+        details: "Os tokens enviados não existem no mapa TOKENS"
       });
     }
 
@@ -34,6 +44,7 @@ router.post("/quote", async (req, res) => {
     const { data } = await axios.get(url);
 
     return res.json(data);
+
   } catch (err) {
     console.error("Erro Jupiter:", err.response?.data || err.message);
 
