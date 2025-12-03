@@ -1,14 +1,13 @@
 const express = require("express");
 const axios = require("axios");
+
+const router = express.Router();
+
+
 require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
 const { Connection, Keypair, VersionedTransaction } = require("@solana/web3.js");
 const bs58 = require("bs58");
 
-const router = express.Router();
-router.use(cors());
-router.use(express.json());
 
 // ================================
 // CONFIGURAÇÕES
