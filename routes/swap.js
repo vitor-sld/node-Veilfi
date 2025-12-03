@@ -3,7 +3,11 @@ const axios = require("axios");
 
 const router = express.Router();
 
-const JUPITER_SWAP = "https://api.jup.ag/swap/v1/swap";
+// ===============================
+//      JUPITER URLs CORRETAS
+// ===============================
+const JUP_API = "https://quote-api.jup.ag/v6/quote";
+const JUPITER_SWAP = "https://quote-api.jup.ag/v6/swap";
 
 // TOKENS MAINNET
 const TOKENS = {
@@ -11,19 +15,15 @@ const TOKENS = {
   USDC: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 };
 
-/* ===============================
-        GET QUOTE (COTAÇÃO)
-=============================== */
-const JUP_API = "https://api.jup.ag/swap/v1/quote";
-
 function uiAmountToAtomic(amountUI, mint) {
-  if (mint === TOKENS.SOL) return Math.round(amountUI * 1_000_000_000); // 9 decimais
-  if (mint === TOKENS.USDC) return Math.round(amountUI * 1_000_000); // 6 decimais
+  if (mint === TOKENS.SOL) return Math.round(amountUI * 1_000_000_000);
+  if (mint === TOKENS.USDC) return Math.round(amountUI * 1_000_000);
   return amountUI;
 }
 
-
-// ====== ROTA /quote ======
+/* ===============================
+        GET QUOTE (V6)
+=============================== */
 router.post("/quote", async (req, res) => {
   try {
     const { from, to, amount } = req.body;
@@ -39,16 +39,11 @@ router.post("/quote", async (req, res) => {
     const outputMint = TOKENS[to.toUpperCase()];
     const atomicAmount = uiAmountToAtomic(Number(amount), inputMint);
 
-    if (!inputMint || !outputMint) {
-      return res.status(400).json({
-        error: "Token inválido",
-        details: "Os tokens enviados não existem no mapa TOKENS"
-      });
-    }
-
     const url = `${JUP_API}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${atomicAmount}`;
 
-    const { data } = await axios.get(url);
+    const { data } = await axios.get(url, {
+      headers: { "User-Agent": "MyApp/1.0" }
+    });
 
     return res.json(data);
 
@@ -63,7 +58,7 @@ router.post("/quote", async (req, res) => {
 });
 
 /* ===============================
-              SWAP
+              SWAP (V6)
 =============================== */
 router.post("/swap", async (req, res) => {
   try {
@@ -73,14 +68,20 @@ router.post("/swap", async (req, res) => {
       return res.status(400).json({ error: "Parâmetros ausentes" });
     }
 
-    // Monta a transação pelo Jupiter
-    const response = await axios.post(JUPITER_SWAP, {
-      quoteResponse,
-      userPublicKey,
-      wrapAndUnwrapSol: true,
-    });
+    const response = await axios.post(
+      JUPITER_SWAP,
+      {
+        quoteResponse,
+        userPublicKey,
+        wrapAndUnwrapSol: true,
+      },
+      {
+        headers: { "User-Agent": "MyApp/1.0" }
+      }
+    );
 
     return res.json(response.data);
+
   } catch (err) {
     console.error("SWAP ERROR:", err.response?.data || err.message);
 
