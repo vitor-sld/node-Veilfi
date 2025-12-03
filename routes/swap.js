@@ -15,28 +15,28 @@ const TOKENS = {
 /* ===============================
         GET QUOTE (COTAÇÃO)
 =============================== */
-router.get("/quote", async (req, res) => {
+const JUP_API = "https://quote-api.jup.ag/v6/quote";
+
+// ====== ROTA /quote ======
+router.post("/quote", async (req, res) => {
   try {
-    const { from, to, amount } = req.query;
+    const { inputMint, outputMint, amount } = req.body;
 
-    if (!from || !to || !amount) {
-      return res.status(400).json({ error: "Parâmetros inválidos" });
+    if (!inputMint || !outputMint || !amount) {
+      return res.status(400).json({
+        error: "Parâmetros inválidos",
+        details: "inputMint, outputMint e amount são obrigatórios"
+      });
     }
 
-    const inputMint = TOKENS[from.toUpperCase()];
-    const outputMint = TOKENS[to.toUpperCase()];
+    const url = `${JUP_API}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}`;
 
-    if (!inputMint || !outputMint) {
-      return res.status(400).json({ error: "Token inválido" });
-    }
+    const { data } = await axios.get(url);
 
-    const url = `${JUPITER_QUOTE}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}&slippageBps=50`;
-
-    const response = await axios.get(url);
-
-    return res.json(response.data);
+    return res.json(data);
   } catch (err) {
-    console.error("QUOTE ERROR:", err.response?.data || err.message);
+    console.error("Erro Jupiter:", err.response?.data || err.message);
+
     return res.status(500).json({
       error: "Erro ao obter cotação",
       details: err.response?.data || err.message,
