@@ -141,8 +141,4 @@ router.post("/swap", async (req, res) => {
   }
 });
 
-// ================================
-// START SERVER
-// ================================
-router.listen(PORT, () => console.log(`Backend rodando na porta ${PORT}`));
-
+module.exports = router;
