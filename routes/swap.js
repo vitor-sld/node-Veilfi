@@ -51,21 +51,56 @@ function uiAmountToAtomic(amountUI, mint) {
 // ================================
 
 // POST /quote
-// Body: { from: "SOL"|"USDC", to: "SOL"|"USDC", amount: number }
+// Body: { from, to, amount } - accepts aliases: `direction` (eg "SOL_USDC" or "SOL->USDC"),
+// `inputMint`/`outputMint`, `amountUi`, `amountInSmallestUnits` (atomic)
 router.post("/quote", async (req, res) => {
   try {
-    const { from, to, amount } = req.body;
+    // Accept multiple field names for compatibility
+    let from = req.body.from || req.body.fromSymbol || req.body.inputMint || req.body.inputMintSymbol;
+    let to = req.body.to || req.body.toSymbol || req.body.outputMint || req.body.outputMintSymbol;
 
-    if (!from || !to || !amount) {
+    // If client sent a `direction` like "SOL_USDC" or "SOL->USDC", parse it
+    const direction = req.body.direction || req.body.pair;
+    if ((!from || !to) && direction && typeof direction === 'string') {
+      const sep = direction.includes('->') ? '->' : (direction.includes('_') ? '_' : (direction.includes('-') ? '-' : null));
+      if (sep) {
+        const parts = direction.split(sep).map(s => s.trim());
+        if (parts.length === 2) {
+          from = from || parts[0];
+          to = to || parts[1];
+        }
+      }
+    }
+
+    // Amount alternatives
+    const amountUi = req.body.amount ?? req.body.amountUi ?? req.body.usdAmount ?? req.body.solAmount;
+    const amountInSmallestUnits = req.body.amountInSmallestUnits ?? req.body.atomicAmount ?? req.body.amountAtomic;
+
+    // Log incoming request keys to help debugging (dev only shows body)
+    console.log("QUOTE REQ keys:", Object.keys(req.body));
+    if (process.env.NODE_ENV === 'development') {
+      const safeBody = { ...req.body };
+      if (safeBody.secret) safeBody.secret = '***';
+      if (safeBody.privateKey) safeBody.privateKey = '***';
+      console.log("QUOTE REQ body:", safeBody);
+    }
+
+    if (!from || !to || (amountUi === undefined && amountInSmallestUnits === undefined)) {
       return res.status(400).json({
         error: "Parâmetros inválidos",
         details: "from, to e amount são obrigatórios",
+        present: Object.keys(req.body),
       });
     }
 
-    const inputMint = from.toUpperCase() === "SOL" ? SOL_MINT : USDC_MINT;
-    const outputMint = to.toUpperCase() === "SOL" ? SOL_MINT : USDC_MINT;
-    const atomicAmount = uiAmountToAtomic(Number(amount), inputMint);
+    // Normalize symbols like 'SOL' or token mint strings
+    const inputMint = (from && from.toUpperCase && from.toUpperCase() === "SOL") ? SOL_MINT : (from || SOL_MINT);
+    const outputMint = (to && to.toUpperCase && to.toUpperCase() === "SOL") ? SOL_MINT : (to || USDC_MINT);
+
+    // Convert UI amount to atomic if necessary
+    const atomicAmount = (amountInSmallestUnits !== undefined && amountInSmallestUnits !== null)
+      ? Number(amountInSmallestUnits)
+      : uiAmountToAtomic(Number(amountUi), inputMint);
 
     const url = `${JUPITER_QUOTE}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${atomicAmount}&slippageBps=50`;
 
