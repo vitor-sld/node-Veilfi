@@ -16,6 +16,13 @@ const TOKENS = {
 =============================== */
 const JUP_API = "https://api.jup.ag/swap/v1/quote";
 
+function uiAmountToAtomic(amountUI, mint) {
+  if (mint === TOKENS.SOL) return Math.round(amountUI * 1_000_000_000); // 9 decimais
+  if (mint === TOKENS.USDC) return Math.round(amountUI * 1_000_000); // 6 decimais
+  return amountUI;
+}
+
+
 // ====== ROTA /quote ======
 router.post("/quote", async (req, res) => {
   try {
@@ -30,6 +37,7 @@ router.post("/quote", async (req, res) => {
 
     const inputMint = TOKENS[from.toUpperCase()];
     const outputMint = TOKENS[to.toUpperCase()];
+    const atomicAmount = uiAmountToAtomic(Number(amount), inputMint);
 
     if (!inputMint || !outputMint) {
       return res.status(400).json({
@@ -38,7 +46,7 @@ router.post("/quote", async (req, res) => {
       });
     }
 
-    const url = `${JUP_API}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}`;
+    const url = `${JUP_API}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${atomicAmount}`;
 
     const { data } = await axios.get(url);
 
