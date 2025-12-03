@@ -153,152 +153,96 @@ router.post("/quote", async (req, res) => {
 // POST /swap
 // Body: { carteiraUsuarioPublica, carteiraUsuarioPrivada, from: "SOL"|"USDC", to: "SOL"|"USDC", amount: number }
 router.post("/swap", async (req, res) => {
-  try {
-    // Accept multiple possible field names for compatibility with different clients
-    const publicKey = req.body.carteiraUsuarioPublica || req.body.userPublicKey || req.body.publicKey || req.body.wallet;
-    const privateKey = req.body.carteiraUsuarioPrivada || req.body.userPrivateKey || req.body.privateKey || req.body.secret;
+ try {
+  // ... (Mantenha o código de obtenção de publicKey, privateKey, from, to, amount, etc.)
 
-    // from/to accept same aliases as /quote and support `direction`
-    let from = req.body.from || req.body.fromSymbol || req.body.inputMint || req.body.inputMintSymbol;
-    let to = req.body.to || req.body.toSymbol || req.body.outputMint || req.body.outputMintSymbol;
-    const direction = req.body.direction || req.body.pair;
-    if ((!from || !to) && direction && typeof direction === 'string') {
-      // normalize separators to spaces and remove the literal 'TO' token (common pattern)
-      const cleaned = direction.replace(/->/g, ' ').replace(/[_-]/g, ' ');
-      const parts = cleaned.split(/\s+/).map(s => s.trim()).filter(Boolean).filter(s => s.toUpperCase() !== 'TO');
-      if (parts.length >= 2) {
-        from = from || parts[0];
-        to = to || parts[1];
-      }
-    }
+  // Aceita múltiplos nomes de campo possíveis para compatibilidade com diferentes clientes
+  const publicKey = req.body.carteiraUsuarioPublica || req.body.userPublicKey || req.body.publicKey || req.body.wallet;
+  const privateKey = req.body.carteiraUsuarioPrivada || req.body.userPrivateKey || req.body.privateKey || req.body.secret; // Necessário para logs, mas NÃO usado para assinar
 
-    // Accept amount (UI) or amountInSmallestUnits (atomic)
-    const amountUi = req.body.amount ?? req.body.amountUi ?? req.body.usdAmount ?? req.body.solAmount;
-    let amountInSmallestUnits = req.body.amountInSmallestUnits ?? req.body.atomicAmount ?? req.body.amountAtomic;
+  // O restante do parsing de `from`, `to`, `amount`, e `quote` é mantido
+  
+  // ... (Mantenha o código de parsing de `quote` e validação de parâmetros)
 
-    // If frontend sent a full `quote` object (from previous /quote), accept it and extract mints/amounts
-    if (req.body.quote && typeof req.body.quote === 'object') {
-      try {
-        const q = req.body.quote;
-        // quote may include inputMint/outputMint and inAmount/outAmount as strings
-        from = from || q.inputMint || q.inputMintAddress || q.inputMintAddressString;
-        to = to || q.outputMint || q.outputMintAddress || q.outputMintAddressString;
-        // prefer inAmount for ExactIn swaps, fallback to outAmount
-        const inAmt = q.inAmount ?? q.inAmountString ?? q.amount ?? q.inAmountAtomic;
-        const outAmt = q.outAmount ?? q.outAmountString ?? q.amountOut;
-        if ((inAmt !== undefined && inAmt !== null) && (amountInSmallestUnits === undefined || amountInSmallestUnits === null)) {
-          // ensure numeric
-          amountInSmallestUnits = Number(inAmt);
-        } else if ((outAmt !== undefined && outAmt !== null) && (amountInSmallestUnits === undefined || amountInSmallestUnits === null)) {
-          amountInSmallestUnits = Number(outAmt);
-        }
-        console.log('Using quote payload to fill from/to/amountInSmallestUnits');
-      } catch (e) {
-        console.warn('Failed to parse quote object from body', e);
-      }
-    }
-
-    // Mask private key for logs
-    const maskedPriv = privateKey ? ("***" + String(privateKey).slice(-8)) : undefined;
-    console.log("=== SWAP REQUEST ===", {
-      publicKey: publicKey?.toString?.().substring(0, 8) + "...",
-      from,
-      to,
-      amountUi,
-      amountInSmallestUnits,
-      privateKey: maskedPriv,
-      bodyKeys: Object.keys(req.body)
-    });
-
-    const missing = [];
-    if (!publicKey) missing.push("carteiraUsuarioPublica (or userPublicKey)");
-    if (!privateKey) missing.push("carteiraUsuarioPrivada (or userPrivateKey)");
-    if (!from) missing.push("from");
-    if (!to) missing.push("to");
-    if ((amountUi === undefined || amountUi === null || amountUi === "") && (amountInSmallestUnits === undefined || amountInSmallestUnits === null || amountInSmallestUnits === "")) missing.push("amount or amountInSmallestUnits");
-
-    if (missing.length) {
-      return res.status(400).json({ error: "Parâmetros ausentes", missing });
-    }
-
-    // Normalize/validate mints
-    const inputMint = normalizeToMint(from);
-    const outputMint = normalizeToMint(to);
-
-    if (!inputMint || !outputMint) {
-      return res.status(400).json({
-        error: 'Parâmetros inválidos',
-        details: 'from/to devem ser símbolos válidos (SOL, USDC) ou endereços de mint válidos',
-        received: { from, to },
-        parsed: { inputMint, outputMint },
-      });
-    }
-
-    // Determine atomic amount
-    const atomicAmount = (amountInSmallestUnits !== undefined && amountInSmallestUnits !== null)
-      ? Number(amountInSmallestUnits)
-      : uiAmountToAtomic(Number(amountUi), inputMint);
-
-    // 1) Obter quote do Jupiter
-    const quoteRes = await axios.get(`${JUPITER_QUOTE}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${atomicAmount}&slippageBps=50`);
-    const quote = quoteRes.data;
-
-    if (!quote || !quote.outAmount) {
-      return res.status(500).json({ error: "Não foi possível obter cotação", details: quote });
-    }
-
-    // 2) Criar transação de swap via Jupiter
-    console.log('Creating swap with Jupiter', { userPublicKey: publicKey, wrapAndUnwrapSol: true });
-    // Jupiter expects `quoteResponse` as the field name for the quote payload.
-    // Send both `quoteResponse` and `quote` for broader compatibility with different Jupiter endpoints.
-    const swapRes = await axios.post(JUPITER_SWAP, {
-      quoteResponse: quote,
-      quote,
-      userPublicKey: publicKey,
-      wrapAndUnwrapSol: true,
-    });
-    console.log('Jupiter swap response keys:', Object.keys(swapRes.data || {}));
-    const swapTxBase64 = swapRes.data?.swapTransaction;
-
-    if (!swapTxBase64) {
-      return res.status(500).json({ error: "Swap transaction não gerada", details: swapRes.data });
-    }
-
-    // 3) Assinar transação localmente
-    const user = parsePrivateKey(privateKey);
-    const txBuf = Buffer.from(swapTxBase64, "base64");
-    const tx = VersionedTransaction.deserialize(txBuf);
-    tx.sign([user]);
-
-    // 4) Enviar para Solana
-    const connection = new Connection(RPC_ENDPOINT, "confirmed");
-    const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
-    await connection.confirmTransaction(signature, "confirmed");
-
-    return res.json({
-      sucesso: true,
-      signature,
-      from,
-      to,
-      amount: amountUi ?? amountInSmallestUnits,
-      recebido: quote.outAmount,
-    });
-  } catch (err) {
-      console.error("SWAP ERROR:", err);
-      const swapErrData = err.response?.data;
-      const baseDetails = swapErrData || err.message || String(err);
-
-      const payload = {
-        error: "Erro ao criar transação de swap",
-        details: baseDetails,
-      };
-      if (process.env.NODE_ENV === 'development') {
-        payload.stack = err.stack;
-        payload.config = err.config;
-      }
-
-      return res.status(500).json(payload);
+  // Se frontend enviou um objeto `quote` completo, aceita-o e extrai mints/amounts
+  if (req.body.quote && typeof req.body.quote === 'object') {
+   // Lógica para extrair campos do `quote`
+   // ... (Mantenha a lógica de extração do quote)
   }
+
+  // ... (Mantenha as verificações de parâmetros ausentes e validação de mints)
+  
+  // ... (Mantenha a determinação do atomicAmount, que pode ser ignorada se o quote for enviado)
+
+  // Para garantir que temos a cotação correta (se o front-end não enviou o quote completo)
+  // Se o front-end enviou o objeto 'quote', use-o. Senão, gere-o:
+  let quote = req.body.quote;
+
+  if (!quote) {
+   // Se o quote não foi enviado, gere-o (usando inputMint e atomicAmount)
+   const inputMint = normalizeToMint(from);
+   const outputMint = normalizeToMint(to);
+   const atomicAmount = (amountInSmallestUnits !== undefined && amountInSmallestUnits !== null)
+    ? Number(amountInSmallestUnits)
+    : uiAmountToAtomic(Number(amountUi), inputMint);
+
+   const quoteRes = await axios.get(`${JUPITER_QUOTE}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${atomicAmount}&slippageBps=50`);
+   quote = quoteRes.data;
+   if (!quote || !quote.outAmount) {
+    return res.status(500).json({ error: "Não foi possível obter cotação antes de gerar o swap", details: quote });
+   }
+  }
+  
+  // 1) Criar transação de swap via Jupiter
+  console.log('Creating swap transaction with Jupiter');
+  const swapRes = await axios.post(JUPITER_SWAP, {
+   quoteResponse: quote,
+   userPublicKey: publicKey,
+   wrapAndUnwrapSol: true,
+  });
+  
+  console.log('Jupiter swap response keys:', Object.keys(swapRes.data || {}));
+  const swapTxBase64 = swapRes.data?.swapTransaction;
+
+  if (!swapTxBase64) {
+   return res.status(500).json({ 
+      error: "Swap transaction não gerada", 
+    details: swapRes.data // Retorna os detalhes para debug
+   });
+  }
+
+  // ----------------------------------------------------
+  // 🛑 REMOÇÃO: NENHUMA ASSINATURA OU ENVIO NO BACKEND
+  // O Front-end fará o restante.
+  // ----------------------------------------------------
+
+  // 2) Retornar a transação Base64 (que o Front-end espera)
+  return res.json({
+   sucesso: true,
+   // O campo que o Front-end espera para desserializar e assinar
+   swapTransaction: swapTxBase64, 
+   from,
+   to,
+   // Retorna a quantidade de saída esperada para referência
+   outAmount: quote.outAmount, 
+  });
+ } catch (err) {
+   console.error("SWAP ERROR:", err);
+   const swapErrData = err.response?.data;
+   const baseDetails = swapErrData || err.message || String(err);
+
+   const payload = {
+    error: "Erro ao criar transação de swap",
+    details: baseDetails,
+   };
+   if (process.env.NODE_ENV === 'development') {
+    payload.stack = err.stack;
+    payload.config = err.config;
+   }
+
+   // Mantenha o status 500 para indicar falha na geração/simulação
+   return res.status(500).json(payload);
+ }
 });
 
 module.exports = router;
