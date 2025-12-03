@@ -18,8 +18,10 @@ const RPC_ENDPOINT = process.env.RPC_ENDPOINT || "https://api.mainnet-beta.solan
 const SOL_MINT = "So11111111111111111111111111111111111111112";
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 
-const JUPITER_QUOTE = "https://api.jup.ag/v6/quote";
-const JUPITER_SWAP = "https://api.jup.ag/v6/swap";
+// Use Jupiter public proxy/base which doesn't require API key
+const JUP_BASE = process.env.JUP_BASE || "https://public.jupiterapi.com";
+const JUPITER_QUOTE = `${JUP_BASE}/quote`;
+const JUPITER_SWAP = `${JUP_BASE}/swap`;
 
 // ================================
 // HELPER: Converte chave privada
