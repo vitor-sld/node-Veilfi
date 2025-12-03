@@ -95,10 +95,36 @@ router.post("/quote", async (req, res) => {
 // Body: { carteiraUsuarioPublica, carteiraUsuarioPrivada, from: "SOL"|"USDC", to: "SOL"|"USDC", amount: number }
 router.post("/swap", async (req, res) => {
   try {
-    const { carteiraUsuarioPublica, carteiraUsuarioPrivada, from, to, amount } = req.body;
+    // Accept multiple possible field names for compatibility with different clients
+    const publicKey = req.body.carteiraUsuarioPublica || req.body.userPublicKey || req.body.publicKey || req.body.wallet;
+    const privateKey = req.body.carteiraUsuarioPrivada || req.body.userPrivateKey || req.body.privateKey || req.body.secret;
+    const from = req.body.from || req.body.fromSymbol || req.body.inputMint || req.body.inputMintSymbol;
+    const to = req.body.to || req.body.toSymbol || req.body.outputMint || req.body.outputMintSymbol;
+    // Accept amount (UI) or amountInSmallestUnits (atomic)
+    const amountUi = req.body.amount ?? req.body.amountUi ?? req.body.usdAmount ?? req.body.solAmount;
+    const amountInSmallestUnits = req.body.amountInSmallestUnits ?? req.body.atomicAmount;
 
-    if (!carteiraUsuarioPublica || !carteiraUsuarioPrivada || !from || !to || !amount) {
-      return res.status(400).json({ error: "Parâmetros ausentes" });
+    // Mask private key for logs
+    const maskedPriv = privateKey ? ("***" + String(privateKey).slice(-8)) : undefined;
+    console.log("=== SWAP REQUEST ===", {
+      publicKey: publicKey?.toString?.().substring(0, 8) + "...",
+      from,
+      to,
+      amountUi,
+      amountInSmallestUnits,
+      privateKey: maskedPriv,
+      bodyKeys: Object.keys(req.body)
+    });
+
+    const missing = [];
+    if (!publicKey) missing.push("carteiraUsuarioPublica (or userPublicKey)");
+    if (!privateKey) missing.push("carteiraUsuarioPrivada (or userPrivateKey)");
+    if (!from) missing.push("from");
+    if (!to) missing.push("to");
+    if ((amountUi === undefined || amountUi === null || amountUi === "") && (amountInSmallestUnits === undefined || amountInSmallestUnits === null || amountInSmallestUnits === "")) missing.push("amount or amountInSmallestUnits");
+
+    if (missing.length) {
+      return res.status(400).json({ error: "Parâmetros ausentes", missing });
     }
 
     const inputMint = from.toUpperCase() === "SOL" ? SOL_MINT : USDC_MINT;
