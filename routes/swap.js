@@ -3,8 +3,7 @@ const axios = require("axios");
 
 const router = express.Router();
 
-const JUPITER_QUOTE = "https://quote-api.jup.ag/v6/quote";
-const JUPITER_SWAP = "https://quote-api.jup.ag/v6/swap";
+const JUPITER_SWAP = "https://api.jup.ag/swap/v1/swap";
 
 // TOKENS MAINNET
 const TOKENS = {
@@ -15,7 +14,7 @@ const TOKENS = {
 /* ===============================
         GET QUOTE (COTAÇÃO)
 =============================== */
-const JUP_API = "https://quote-api.jup.ag/v6/quote";
+const JUP_API = "https://api.jup.ag/swap/v1/quote";
 
 // ====== ROTA /quote ======
 router.post("/quote", async (req, res) => {
