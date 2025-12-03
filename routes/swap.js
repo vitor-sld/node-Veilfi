@@ -71,11 +71,21 @@ router.post("/quote", async (req, res) => {
 
     return res.json(data);
   } catch (err) {
-    console.error("QUOTE ERROR:", err.response?.data || err.message);
-    return res.status(500).json({
-      error: "Erro ao obter cotação",
-      details: err.response?.data || err.message,
-    });
+      // Log the full error for debugging
+      console.error("QUOTE ERROR:", err);
+      const responseData = err.response?.data;
+      const baseDetails = responseData || err.message || String(err);
+
+      const payload = {
+        error: "Erro ao obter cotação",
+        details: baseDetails,
+      };
+      if (process.env.NODE_ENV === 'development') {
+        payload.stack = err.stack;
+        payload.config = err.config;
+      }
+
+      return res.status(500).json(payload);
   }
 });
 
@@ -133,11 +143,20 @@ router.post("/swap", async (req, res) => {
       recebido: quote.outAmount,
     });
   } catch (err) {
-    console.error("SWAP ERROR:", err.response?.data || err.message);
-    return res.status(500).json({
-      error: "Erro ao executar swap",
-      details: err.response?.data || err.message,
-    });
+      console.error("SWAP ERROR:", err);
+      const swapErrData = err.response?.data;
+      const baseDetails = swapErrData || err.message || String(err);
+
+      const payload = {
+        error: "Erro ao criar transação de swap",
+        details: baseDetails,
+      };
+      if (process.env.NODE_ENV === 'development') {
+        payload.stack = err.stack;
+        payload.config = err.config;
+      }
+
+      return res.status(500).json(payload);
   }
 });
 
