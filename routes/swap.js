@@ -46,6 +46,20 @@ function uiAmountToAtomic(amountUI, mint) {
   return amountUI;
 }
 
+// Normalize a symbol like 'SOL' or 'USDC' to a mint, or validate a mint string.
+function normalizeToMint(value) {
+  if (!value) return null;
+  const v = String(value).trim();
+  if (!v) return null;
+  const up = v.toUpperCase();
+  if (up === 'SOL' || up === 'SOLANA') return SOL_MINT;
+  if (up === 'USDC' || up === 'USD' || up === 'USDT') return USDC_MINT;
+  // If it already looks like a mint (base58-ish), do a lightweight validation.
+  // Solana base58 mints typically range ~32-44 chars. We'll accept 32-64 to be permissive.
+  if (/^[1-9A-HJ-NP-Za-km-z]+$/.test(v) && v.length >= 32 && v.length <= 64) return v;
+  return null;
+}
+
 // ================================
 // ROTAS
 // ================================
@@ -93,9 +107,19 @@ router.post("/quote", async (req, res) => {
       });
     }
 
-    // Normalize symbols like 'SOL' or token mint strings
-    const inputMint = (from && from.toUpperCase && from.toUpperCase() === "SOL") ? SOL_MINT : (from || SOL_MINT);
-    const outputMint = (to && to.toUpperCase && to.toUpperCase() === "SOL") ? SOL_MINT : (to || USDC_MINT);
+    // Normalize/validate to actual mint addresses
+    const inputMint = normalizeToMint(from);
+    const outputMint = normalizeToMint(to);
+
+    if (!inputMint || !outputMint) {
+      console.error('Invalid mint(s) for quote', { from, to, inputMint, outputMint });
+      return res.status(400).json({
+        error: 'Parâmetros inválidos',
+        details: 'from/to devem ser símbolos válidos (SOL, USDC) ou endereços de mint válidos',
+        received: { from, to },
+        parsed: { inputMint, outputMint },
+      });
+    }
 
     // Convert UI amount to atomic if necessary
     const atomicAmount = (amountInSmallestUnits !== undefined && amountInSmallestUnits !== null)
@@ -104,6 +128,7 @@ router.post("/quote", async (req, res) => {
 
     const url = `${JUPITER_QUOTE}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${atomicAmount}&slippageBps=50`;
 
+    console.log('Jupiter quote URL:', url);
     const { data } = await axios.get(url);
 
     return res.json(data);
@@ -133,11 +158,25 @@ router.post("/swap", async (req, res) => {
     // Accept multiple possible field names for compatibility with different clients
     const publicKey = req.body.carteiraUsuarioPublica || req.body.userPublicKey || req.body.publicKey || req.body.wallet;
     const privateKey = req.body.carteiraUsuarioPrivada || req.body.userPrivateKey || req.body.privateKey || req.body.secret;
-    const from = req.body.from || req.body.fromSymbol || req.body.inputMint || req.body.inputMintSymbol;
-    const to = req.body.to || req.body.toSymbol || req.body.outputMint || req.body.outputMintSymbol;
+
+    // from/to accept same aliases as /quote and support `direction`
+    let from = req.body.from || req.body.fromSymbol || req.body.inputMint || req.body.inputMintSymbol;
+    let to = req.body.to || req.body.toSymbol || req.body.outputMint || req.body.outputMintSymbol;
+    const direction = req.body.direction || req.body.pair;
+    if ((!from || !to) && direction && typeof direction === 'string') {
+      const sep = direction.includes('->') ? '->' : (direction.includes('_') ? '_' : (direction.includes('-') ? '-' : null));
+      if (sep) {
+        const parts = direction.split(sep).map(s => s.trim());
+        if (parts.length === 2) {
+          from = from || parts[0];
+          to = to || parts[1];
+        }
+      }
+    }
+
     // Accept amount (UI) or amountInSmallestUnits (atomic)
     const amountUi = req.body.amount ?? req.body.amountUi ?? req.body.usdAmount ?? req.body.solAmount;
-    const amountInSmallestUnits = req.body.amountInSmallestUnits ?? req.body.atomicAmount;
+    const amountInSmallestUnits = req.body.amountInSmallestUnits ?? req.body.atomicAmount ?? req.body.amountAtomic;
 
     // Mask private key for logs
     const maskedPriv = privateKey ? ("***" + String(privateKey).slice(-8)) : undefined;
@@ -162,32 +201,47 @@ router.post("/swap", async (req, res) => {
       return res.status(400).json({ error: "Parâmetros ausentes", missing });
     }
 
-    const inputMint = from.toUpperCase() === "SOL" ? SOL_MINT : USDC_MINT;
-    const outputMint = to.toUpperCase() === "SOL" ? SOL_MINT : USDC_MINT;
-    const atomicAmount = uiAmountToAtomic(Number(amount), inputMint);
+    // Normalize/validate mints
+    const inputMint = normalizeToMint(from);
+    const outputMint = normalizeToMint(to);
+
+    if (!inputMint || !outputMint) {
+      return res.status(400).json({
+        error: 'Parâmetros inválidos',
+        details: 'from/to devem ser símbolos válidos (SOL, USDC) ou endereços de mint válidos',
+        received: { from, to },
+        parsed: { inputMint, outputMint },
+      });
+    }
+
+    // Determine atomic amount
+    const atomicAmount = (amountInSmallestUnits !== undefined && amountInSmallestUnits !== null)
+      ? Number(amountInSmallestUnits)
+      : uiAmountToAtomic(Number(amountUi), inputMint);
 
     // 1) Obter quote do Jupiter
     const quoteRes = await axios.get(`${JUPITER_QUOTE}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${atomicAmount}&slippageBps=50`);
     const quote = quoteRes.data;
 
     if (!quote || !quote.outAmount) {
-      return res.status(500).json({ error: "Não foi possível obter cotação" });
+      return res.status(500).json({ error: "Não foi possível obter cotação", details: quote });
     }
 
-    // 2) Criar transação de swap
+    // 2) Criar transação de swap via Jupiter
+    console.log('Creating swap with Jupiter', { userPublicKey: publicKey, wrapAndUnwrapSol: true });
     const swapRes = await axios.post(JUPITER_SWAP, {
       quote,
-      userPublicKey: carteiraUsuarioPublica,
+      userPublicKey: publicKey,
       wrapAndUnwrapSol: true,
     });
-    const swapTxBase64 = swapRes.data.swapTransaction;
+    const swapTxBase64 = swapRes.data?.swapTransaction;
 
     if (!swapTxBase64) {
-      return res.status(500).json({ error: "Swap transaction não gerada" });
+      return res.status(500).json({ error: "Swap transaction não gerada", details: swapRes.data });
     }
 
     // 3) Assinar transação localmente
-    const user = parsePrivateKey(carteiraUsuarioPrivada);
+    const user = parsePrivateKey(privateKey);
     const txBuf = Buffer.from(swapTxBase64, "base64");
     const tx = VersionedTransaction.deserialize(txBuf);
     tx.sign([user]);
@@ -202,7 +256,7 @@ router.post("/swap", async (req, res) => {
       signature,
       from,
       to,
-      amount,
+      amount: amountUi ?? amountInSmallestUnits,
       recebido: quote.outAmount,
     });
   } catch (err) {
