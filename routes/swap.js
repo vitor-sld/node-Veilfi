@@ -1,14 +1,14 @@
-// server.js
+const express = require("express");
+const axios = require("axios");
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const axios = require("axios");
 const { Connection, Keypair, VersionedTransaction } = require("@solana/web3.js");
 const bs58 = require("bs58");
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+const router = express.Router();
+router.use(cors());
+router.use(express.json());
 
 // ================================
 // CONFIGURAÇÕES
@@ -51,7 +51,7 @@ function uiAmountToAtomic(amountUI, mint) {
 
 // POST /quote
 // Body: { from: "SOL"|"USDC", to: "SOL"|"USDC", amount: number }
-app.post("/quote", async (req, res) => {
+router.post("/quote", async (req, res) => {
   try {
     const { from, to, amount } = req.body;
 
@@ -82,7 +82,7 @@ app.post("/quote", async (req, res) => {
 
 // POST /swap
 // Body: { carteiraUsuarioPublica, carteiraUsuarioPrivada, from: "SOL"|"USDC", to: "SOL"|"USDC", amount: number }
-app.post("/swap", async (req, res) => {
+router.post("/swap", async (req, res) => {
   try {
     const { carteiraUsuarioPublica, carteiraUsuarioPrivada, from, to, amount } = req.body;
 
@@ -145,4 +145,5 @@ app.post("/swap", async (req, res) => {
 // ================================
 // START SERVER
 // ================================
-app.listen(PORT, () => console.log(`Backend rodando na porta ${PORT}`));
+router.listen(PORT, () => console.log(`Backend rodando na porta ${PORT}`));
+
