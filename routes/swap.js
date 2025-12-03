@@ -9,7 +9,7 @@ const JUPITER_SWAP = "https://quote-api.jup.ag/v6/swap";
 // TOKENS MAINNET
 const TOKENS = {
   SOL: "So11111111111111111111111111111111111111112",
-  JUP: "JUP4Fb2cqiRU9RjXG1Sp4Kx83b8JkXo7n6d1M9UUb5X",
+  USDC: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 };
 
 /* ===============================
