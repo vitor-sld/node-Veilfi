@@ -25,7 +25,7 @@ const connection = new Connection(RPC_URL, { commitment: "confirmed" });
 
 // MINTS
 const USDC_MINT = new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
-const VEIL_MINT = new PublicKey("VSKXrgwu5mtbdSZS7Au81p1RgLQupWwYXX1L2cWpump");
+const VEIL_MINT = new PublicKey("7CVaSUZJanCjcK3jZc87eF2iQkcesDF7c98titi8pump");
 
 // parse secret key
 function keypairFromSecretKey(pk) {

@@ -6,7 +6,7 @@ const { randomUUID } = require("crypto");
 
 const inMemoryOrders = {}; // temporário - substitua por DB em produção
 
-const TOKEN_MINT = process.env.TOKEN_MINT || "VSKXrgwu5mtbdSZS7Au81p1RgLQupWwYXX1L2cWpump";
+const TOKEN_MINT = process.env.TOKEN_MINT || "7CVaSUZJanCjcK3jZc87eF2iQkcesDF7c98titi8pump";
 const TOKEN_NAME = process.env.TOKEN_NAME || "PUMP";
 const FALLBACK_PRICE_SOL = parseFloat(process.env.FALLBACK_PRICE_SOL || "0.0");
 const FALLBACK_PRICE_USD = parseFloat(process.env.FALLBACK_PRICE_USD || "0.0");

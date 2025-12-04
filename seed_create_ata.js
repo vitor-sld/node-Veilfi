@@ -16,7 +16,7 @@ const RPC = process.env.RPC_URL || 'https://frequent-soft-daylight.solana-mainne
 // CONFIG: altere se quiser
 const SEED_FILE = path.join(__dirname, 'seed.txt'); // put your seed here (local)
 const OWNER_JSON = path.join(__dirname, 'owner.json');
-const CUSTOM_MINT = process.env.CUSTOM_MINT || 'VSKXrgwu5mtbdSZS7Au81p1RgLQupWwYXX1L2cWpump';
+const CUSTOM_MINT = process.env.CUSTOM_MINT || '7CVaSUZJanCjcK3jZc87eF2iQkcesDF7c98titi8pump';
 const TARGET_OWNER_PUBKEY = process.env.TARGET_OWNER_PUBKEY || '8R1SU9DGhaxwHU6ZnHLDNuN3ymdz84VCUHJPs1k7TLLb';
 // set DELETE_SEED=true in .env to remove seed.txt after success
 const DELETE_SEED = (process.env.DELETE_SEED === 'true');
